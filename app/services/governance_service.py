@@ -1,14 +1,15 @@
-"""治理待办业务逻辑"""
+"""Governance ticket business logic."""
 
 import logging
+from datetime import datetime
 
-from ..models import FieldSemantic, GovernanceTicket, get_session
+from ..models import GovernanceTicket, get_session
 
 logger = logging.getLogger(__name__)
 
 
-def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None):
-    """当字段语义被治理后，自动关闭对应的治理待办"""
+def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None) -> int:
+    """Auto-resolve open tickets related to a governed column semantic."""
     db = get_session()
     try:
         tickets = (
@@ -22,23 +23,24 @@ def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None):
         )
         for ticket in tickets:
             ticket.status = "resolved"
-            ticket.resolution = "字段语义已治理"
-            from datetime import datetime
+            ticket.resolution = "\u5b57\u6bb5\u8bed\u4e49\u5df2\u6cbb\u7406"
             ticket.resolved_at = datetime.utcnow()
             if governed_by:
                 ticket.assignee = governed_by
         db.commit()
         if tickets:
-            logger.info("自动关闭 %d 个治理待办 (column_id=%s)", len(tickets), column_id)
+            logger.info("Auto-resolved %d governance tickets (column_id=%s)", len(tickets), column_id)
+        return len(tickets)
     except Exception as e:
         db.rollback()
-        logger.error("自动关闭治理待办失败: %s", e)
+        logger.error("Failed to auto-resolve governance tickets: %s", e)
+        raise
     finally:
         db.close()
 
 
 def get_open_ticket_count() -> int:
-    """获取待处理的治理待办数量"""
+    """Return the number of open governance tickets."""
     db = get_session()
     try:
         return (

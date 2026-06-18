@@ -9,6 +9,10 @@ from app.models import (
     MetricDefinition,
     MetricCaliber,
     GovernanceTicket,
+    TableMetadata,
+    ColumnMetadata,
+    FieldSemantic,
+    get_session,
 )
 
 
@@ -281,3 +285,144 @@ def test_governance_modal_has_action_controls(client):
     assert "ticketStatus" in resp.text
     assert "ticketResolution" in resp.text
     assert "saveTicketAction" in resp.text
+
+
+def test_save_field_semantic_closes_related_ticket(client, db_session):
+    """Saving a field semantic closes the related governance ticket."""
+    _ = db_session
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="\u8bed\u4e49\u6d4b\u8bd5\u6570\u636e\u6e90",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="DWD",
+            table_name="CONTRACT",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="STATUS",
+            column_type="VARCHAR2(20)",
+            nullable=True,
+            comment="\u72b6\u6001",
+            column_id=1,
+        )
+        db.add(column)
+        db.flush()
+        ticket = GovernanceTicket(
+            ticket_type="missing_semantic",
+            title="\u5b57\u6bb5\u8bed\u4e49\u7f3a\u5931: DWD.CONTRACT.STATUS",
+            description="\u5b57\u6bb5 STATUS \u7f3a\u5c11\u4e1a\u52a1\u542b\u4e49\u89e3\u91ca",
+            source="auto_detect",
+            related_object_type="column",
+            related_object_id=column.id,
+            priority="medium",
+            status="open",
+        )
+        db.add(ticket)
+        db.commit()
+
+        resp = client.put(
+            f"/api/field-semantics/columns/{column.id}",
+            params={
+                "business_alias": "\u5408\u540c\u72b6\u6001",
+                "meaning": "\u8868\u793a\u5408\u540c\u5f53\u524d\u751f\u547d\u5468\u671f\u72b6\u6001",
+                "unit": "",
+                "enum_values": '{"A":"\u6709\u6548","I":"\u65e0\u6548"}',
+                "data_quality_note": "\u5386\u53f2\u6570\u636e\u5b58\u5728\u7a7a\u503c",
+                "governed_by": "\u6cbb\u7406\u4e13\u5458",
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["message"] == "\u5b57\u6bb5\u8bed\u4e49\u5df2\u4fdd\u5b58"
+        assert data["closed_tickets"] == 1
+
+        db.expire_all()
+        semantic = db.query(FieldSemantic).filter(FieldSemantic.column_id == column.id).one()
+        assert semantic.business_alias == "\u5408\u540c\u72b6\u6001"
+        assert semantic.meaning == "\u8868\u793a\u5408\u540c\u5f53\u524d\u751f\u547d\u5468\u671f\u72b6\u6001"
+        assert semantic.enum_values == '{"A":"\u6709\u6548","I":"\u65e0\u6548"}'
+        assert semantic.data_quality_note == "\u5386\u53f2\u6570\u636e\u5b58\u5728\u7a7a\u503c"
+        assert semantic.is_governed is True
+        assert semantic.governed_by == "\u6cbb\u7406\u4e13\u5458"
+        assert semantic.governed_at is not None
+
+        closed_ticket = db.query(GovernanceTicket).filter(GovernanceTicket.id == ticket.id).one()
+        assert closed_ticket.status == "resolved"
+        assert closed_ticket.resolution == "\u5b57\u6bb5\u8bed\u4e49\u5df2\u6cbb\u7406"
+        assert closed_ticket.assignee == "\u6cbb\u7406\u4e13\u5458"
+    finally:
+        db.close()
+
+
+def test_get_field_semantic_returns_column_context(client, db_session):
+    """Getting a field semantic returns column context and existing semantic."""
+    _ = db_session
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="\u8bed\u4e49\u8be6\u60c5\u6570\u636e\u6e90",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="ADS",
+            table_name="CUSTOMER",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="LEVEL_CODE",
+            column_type="VARCHAR2(10)",
+            nullable=False,
+            comment="\u5ba2\u6237\u7b49\u7ea7",
+            enum_samples="A,B,C",
+            column_id=2,
+        )
+        db.add(column)
+        db.flush()
+        db.add(
+            FieldSemantic(
+                column_id=column.id,
+                business_alias="\u5ba2\u6237\u7b49\u7ea7",
+                meaning="\u5ba2\u6237\u5206\u5c42\u7b49\u7ea7\u7f16\u7801",
+                enum_values='{"A":"\u9ad8\u4ef7\u503c"}',
+                is_governed=True,
+                governed_by="\u6570\u636e\u6cbb\u7406",
+            )
+        )
+        db.commit()
+
+        resp = client.get(f"/api/field-semantics/columns/{column.id}")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["column"]["schema_name"] == "ADS"
+        assert data["column"]["table_name"] == "CUSTOMER"
+        assert data["column"]["column_name"] == "LEVEL_CODE"
+        assert data["column"]["enum_samples"] == "A,B,C"
+        assert data["semantic"]["business_alias"] == "\u5ba2\u6237\u7b49\u7ea7"
+        assert data["semantic"]["meaning"] == "\u5ba2\u6237\u5206\u5c42\u7b49\u7ea7\u7f16\u7801"
+    finally:
+        db.close()

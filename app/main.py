@@ -50,12 +50,15 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     from .api.metadata import router as metadata_router
     from .api.metrics import router as metrics_router
     from .api.governance import router as governance_router
+    from .api.field_semantics import router as field_semantics_router
     from .web.routes import router as web_router
 
     app.include_router(datasources_router, prefix="/api/datasources", tags=["数据源"])
     app.include_router(metadata_router, prefix="/api/metadata", tags=["元数据"])
     app.include_router(metrics_router, prefix="/api/metrics", tags=["指标治理"])
     app.include_router(governance_router, prefix="/api/governance", tags=["治理待办"])
+
+    app.include_router(field_semantics_router, prefix="/api/field-semantics", tags=["Field Semantics"])
 
     # Register Web UI routes.
     app.include_router(web_router, prefix="/web", tags=["Web 页面"])
