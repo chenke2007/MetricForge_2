@@ -1,5 +1,7 @@
 """模型基础测试"""
 
+from pathlib import Path
+
 from sqlalchemy import inspect
 
 from app.models import (
@@ -8,6 +10,9 @@ from app.models import (
     MetricCaliber,
     GovernanceTicket,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_create_datasource(db_session):
@@ -177,3 +182,50 @@ def test_governance_page(client):
     resp = client.get("/web/governance")
     assert resp.status_code == 200
     assert "治理待办" in resp.text
+
+
+def test_metric_form_prevents_default_submit():
+    """测试新建指标表单阻止浏览器默认提交"""
+    template = (PROJECT_ROOT / "app/web/templates/metrics/form.html").read_text(encoding="utf-8")
+
+    assert "async function createMetric(e)" in template
+    assert "e.preventDefault();" in template
+
+
+def test_metric_status_update_refreshes_page():
+    """测试指标状态更新成功后刷新页面以同步状态展示"""
+    template = (PROJECT_ROOT / "app/web/templates/metrics/detail.html").read_text(encoding="utf-8")
+
+    assert "async function updateStatus(metricId)" in template
+    assert "window.location.reload();" in template
+
+
+def test_governance_page_filters_by_status(client):
+    """测试治理待办页面按状态筛选"""
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "other",
+            "title": "Open Ticket",
+            "description": "open ticket",
+            "priority": "medium",
+        },
+    )
+    resolved_resp = client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "other",
+            "title": "Resolved Ticket",
+            "description": "resolved ticket",
+            "priority": "medium",
+        },
+    )
+    ticket_id = resolved_resp.json()["id"]
+    client.put(f"/api/governance/{ticket_id}/status", params={"status": "resolved", "resolution": "done"})
+
+    resp = client.get("/web/governance?status=resolved")
+
+    assert resp.status_code == 200
+    assert "Resolved Ticket" in resp.text
+    assert "Open Ticket" not in resp.text
+    assert '<option value="resolved" selected>已解决</option>' in resp.text

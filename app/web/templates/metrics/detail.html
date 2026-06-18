@@ -107,7 +107,9 @@
 async function updateStatus(metricId) {
     const status = document.getElementById('statusSelect').value;
     const resp = await fetch(`/api/metrics/${metricId}/status?status=${status}`, { method: 'PUT' });
-    if (!resp.ok) {
+    if (resp.ok) {
+        window.location.reload();
+    } else {
         alert('状态更新失败');
     }
 }

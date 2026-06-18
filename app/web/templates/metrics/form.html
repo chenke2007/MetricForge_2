@@ -48,6 +48,7 @@
 
 <script>
 async function createMetric(e) {
+    e.preventDefault();
     const params = new URLSearchParams({
         metric_code: document.getElementById('metric_code').value,
         metric_name: document.getElementById('metric_name').value,

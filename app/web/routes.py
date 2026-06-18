@@ -208,11 +208,18 @@ def field_semantic_list(request: Request):
 
 
 @router.get("/governance", response_class=HTMLResponse)
-def governance_list(request: Request):
+def governance_list(request: Request, status: str = None):
     """治理待办页面"""
     db = get_session()
     try:
-        tickets = db.query(GovernanceTicket).order_by(GovernanceTicket.created_at.desc()).all()
-        return templates.TemplateResponse(request, "governance/list.html", {"request": request, "tickets": tickets})
+        q = db.query(GovernanceTicket)
+        if status:
+            q = q.filter(GovernanceTicket.status == status)
+        tickets = q.order_by(GovernanceTicket.created_at.desc()).all()
+        return templates.TemplateResponse(
+            request,
+            "governance/list.html",
+            {"request": request, "tickets": tickets, "current_status": status},
+        )
     finally:
         db.close()

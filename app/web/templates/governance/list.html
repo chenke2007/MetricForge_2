@@ -9,11 +9,11 @@
     </div>
     <div>
         <select class="form-select form-select-sm" onchange="window.location.href='?status='+this.value">
-            <option value="">全部状态</option>
-            <option value="open">待处理</option>
-            <option value="in_progress">处理中</option>
-            <option value="resolved">已解决</option>
-            <option value="closed">已关闭</option>
+            <option value="" {% if not current_status %}selected{% endif %}>全部状态</option>
+            <option value="open" {% if current_status == 'open' %}selected{% endif %}>待处理</option>
+            <option value="in_progress" {% if current_status == 'in_progress' %}selected{% endif %}>处理中</option>
+            <option value="resolved" {% if current_status == 'resolved' %}selected{% endif %}>已解决</option>
+            <option value="closed" {% if current_status == 'closed' %}selected{% endif %}>已关闭</option>
         </select>
     </div>
 </div>
