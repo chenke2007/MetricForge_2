@@ -77,9 +77,41 @@
                 <h5 class="modal-title">治理待办详情</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="ticketDetail">
+            <div class="modal-body">
+                <div id="ticketDetail">
                 <div class="text-center py-3">
                     <div class="spinner-border text-primary" role="status"></div>
+                </div>
+                </div>
+                <hr>
+                <div class="small">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label">负责人</label>
+                            <input id="ticketAssignee" type="text" class="form-control form-control-sm" placeholder="输入负责人">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select id="ticketStatus" class="form-select form-select-sm">
+                                <option value="open">待处理</option>
+                                <option value="in_progress">处理中</option>
+                                <option value="resolved">已解决</option>
+                                <option value="closed">已关闭</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button id="saveTicketAction" type="button" class="btn btn-primary btn-sm w-100" onclick="saveTicketAction()">
+                                <i class="bi bi-check-lg"></i> 保存处理
+                            </button>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">解决说明</label>
+                            <textarea id="ticketResolution" class="form-control form-control-sm" rows="2" placeholder="已解决或关闭时填写处理说明"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <span id="ticketActionResult"></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -87,9 +119,13 @@
 </div>
 
 <script>
+let currentTicketId = null;
+
 async function showTicket(id) {
+    currentTicketId = id;
     const modal = new bootstrap.Modal(document.getElementById('ticketModal'));
     document.getElementById('ticketDetail').innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div></div>';
+    document.getElementById('ticketActionResult').innerHTML = '';
     modal.show();
 
     const resp = await fetch(`/api/governance/${id}`);
@@ -119,6 +155,53 @@ async function showTicket(id) {
             <dd class="col-sm-9">${t.created_at}</dd>
         </dl>
     `;
+    document.getElementById('ticketAssignee').value = t.assignee || '';
+    document.getElementById('ticketStatus').value = t.status || 'open';
+    document.getElementById('ticketResolution').value = t.resolution || '';
+}
+
+async function saveTicketAction() {
+    if (!currentTicketId) {
+        return;
+    }
+
+    const btn = document.getElementById('saveTicketAction');
+    const resultEl = document.getElementById('ticketActionResult');
+    const assignee = document.getElementById('ticketAssignee').value.trim();
+    const status = document.getElementById('ticketStatus').value;
+    const resolution = document.getElementById('ticketResolution').value.trim();
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 保存中...';
+    resultEl.innerHTML = '';
+
+    try {
+        if (assignee) {
+            const assignResp = await fetch(`/api/governance/${currentTicketId}/assign?assignee=${encodeURIComponent(assignee)}`, { method: 'PUT' });
+            if (!assignResp.ok) {
+                const data = await assignResp.json();
+                throw new Error(data.detail || '分配失败');
+            }
+        }
+
+        const params = new URLSearchParams({ status });
+        if (resolution) {
+            params.set('resolution', resolution);
+        }
+        const statusResp = await fetch(`/api/governance/${currentTicketId}/status?${params.toString()}`, { method: 'PUT' });
+        if (!statusResp.ok) {
+            const data = await statusResp.json();
+            throw new Error(data.detail || '状态更新失败');
+        }
+
+        resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 已保存</span>';
+        window.setTimeout(() => window.location.href = window.location.href, 600);
+    } catch (err) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> 保存处理';
+    }
 }
 </script>
 {% endblock %}

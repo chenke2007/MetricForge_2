@@ -8,8 +8,10 @@
         <a href="/web/datasources" class="text-decoration-none small">&larr; 返回列表</a>
     </div>
     <div>
+        <button id="collectMetadataBtn" class="btn btn-primary btn-sm me-2" data-ds-id="{{ ds.id }}"><i class="bi bi-cloud-download"></i> 采集元数据</button>
         <button id="testConnBtn" class="btn btn-outline-info btn-sm" data-ds-id="{{ ds.id }}"><i class="bi bi-plug"></i> 测试连接</button>
         <span id="testResult" class="ms-2 small"></span>
+        <div id="collectionResult" class="mt-2 small"></div>
     </div>
 </div>
 
@@ -88,6 +90,40 @@
 
 {% block scripts %}
 <script>
+document.getElementById('collectMetadataBtn')?.addEventListener('click', collectMetadata);
+
+async function collectMetadata() {
+    const btn = document.getElementById('collectMetadataBtn');
+    const resultEl = document.getElementById('collectionResult');
+    const dsId = btn.dataset.dsId;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 采集中...';
+    resultEl.innerHTML = '';
+
+    try {
+        const resp = await fetch('/api/metadata/collect/' + dsId, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok) {
+            const stats = data.stats || {};
+            resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 采集完成：'
+                + (stats.tables || 0) + ' 张表，'
+                + (stats.columns || 0) + ' 个字段，'
+                + (stats.errors && stats.errors.length ? stats.errors.length + ' 个错误' : '无错误')
+                + '</span>';
+            window.setTimeout(() => window.location.reload(), 1200);
+        } else {
+            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 采集失败：'
+                + (data.detail || '未知错误') + '</span>';
+        }
+    } catch (err) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 采集元数据';
+    }
+}
+
 document.getElementById('testConnBtn')?.addEventListener('click', async function() {
     const btn = this;
     const resultEl = document.getElementById('testResult');

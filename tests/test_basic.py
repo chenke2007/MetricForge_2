@@ -229,3 +229,55 @@ def test_governance_page_filters_by_status(client):
     assert "Resolved Ticket" in resp.text
     assert "Open Ticket" not in resp.text
     assert '<option value="resolved" selected>已解决</option>' in resp.text
+
+
+def test_datasource_detail_has_metadata_collection_controls(client):
+    """测试数据源详情页提供元数据采集入口"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "采集测试数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    resp = client.get(f"/web/datasources/{ds_id}")
+
+    assert resp.status_code == 200
+    assert "采集元数据" in resp.text
+    assert "collectMetadata" in resp.text
+    assert "collectionResult" in resp.text
+
+
+def test_metadata_empty_state_links_to_datasources(client):
+    """测试元数据空状态提供数据源采集入口"""
+    resp = client.get("/web/metadata")
+
+    assert resp.status_code == 200
+    assert "去数据源采集" in resp.text
+    assert "/web/datasources" in resp.text
+
+
+def test_governance_modal_has_action_controls(client):
+    """测试治理待办详情弹窗提供闭环操作控件"""
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "other",
+            "title": "治理闭环测试待办",
+            "description": "用于验证治理操作控件",
+            "priority": "high",
+        },
+    )
+
+    resp = client.get("/web/governance")
+
+    assert resp.status_code == 200
+    assert "ticketAssignee" in resp.text
+    assert "ticketStatus" in resp.text
+    assert "ticketResolution" in resp.text
+    assert "saveTicketAction" in resp.text
