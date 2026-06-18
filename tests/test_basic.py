@@ -572,3 +572,57 @@ def test_governance_modal_has_field_semantic_editor_controls(client):
     assert "semanticGovernedBy" in resp.text
     assert "saveFieldSemantic" in resp.text
     assert "fieldSemanticResult" in resp.text
+
+
+def test_field_semantics_page_shows_column_path(client, db_session):
+    """Field semantic list shows schema.table.column and semantic details."""
+    _ = db_session
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="\u8bed\u4e49\u5217\u8868\u6570\u636e\u6e90",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="DM",
+            table_name="CUSTOMER_TAG",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="TAG_CODE",
+            column_type="VARCHAR2(30)",
+            nullable=True,
+            column_id=1,
+        )
+        db.add(column)
+        db.flush()
+        db.add(
+            FieldSemantic(
+                column_id=column.id,
+                business_alias="\u5ba2\u6237\u6807\u7b7e",
+                meaning="\u5ba2\u6237\u8fd0\u8425\u6807\u7b7e\u7f16\u7801",
+                is_governed=True,
+                governed_by="\u6cbb\u7406\u4e13\u5458",
+            )
+        )
+        db.commit()
+
+        resp = client.get("/web/field-semantics")
+
+        assert resp.status_code == 200
+        assert "DM.CUSTOMER_TAG.TAG_CODE" in resp.text
+        assert "VARCHAR2(30)" in resp.text
+        assert "\u5ba2\u6237\u6807\u7b7e" in resp.text
+        assert "\u6cbb\u7406\u4e13\u5458" in resp.text
+    finally:
+        db.close()

@@ -15,7 +15,8 @@
         <table class="table table-hover mb-0 small">
             <thead class="table-light">
                 <tr>
-                    <th>字段 ID</th>
+                    <th>字段</th>
+                    <th>类型</th>
                     <th>业务别名</th>
                     <th>含义</th>
                     <th>单位</th>
@@ -26,8 +27,11 @@
             <tbody>
                 {% for s in semantics %}
                 <tr>
-                    <td><span class="badge bg-secondary">{{ s.column_id }}</span></td>
-                    <td class="fw-bold">{{ s.business_alias or '-' }}</td>
+                    <td class="fw-bold">
+                        {{ s.column.table.schema_name }}.{{ s.column.table.table_name }}.{{ s.column.column_name }}
+                    </td>
+                    <td><span class="badge bg-light text-dark">{{ s.column.column_type }}</span></td>
+                    <td>{{ s.business_alias or '-' }}</td>
                     <td class="text-muted small">{{ s.meaning[:40] + '...' if s.meaning and s.meaning|length > 40 else s.meaning or '-' }}</td>
                     <td>{{ s.unit or '-' }}</td>
                     <td>{% if s.is_governed %}<span class="badge bg-success">是</span>{% else %}<span class="badge bg-warning text-dark">否</span>{% endif %}</td>

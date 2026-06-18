@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from sqlalchemy.orm import joinedload
 
 from ..models import (
     DatasourceConfig,
@@ -198,6 +199,7 @@ def field_semantic_list(request: Request):
     try:
         semantics = (
             db.query(FieldSemantic)
+            .options(joinedload(FieldSemantic.column).joinedload(ColumnMetadata.table))
             .order_by(FieldSemantic.id.desc())
             .limit(50)
             .all()
