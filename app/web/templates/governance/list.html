@@ -164,14 +164,26 @@
 let currentTicketId = null;
 let currentSemanticColumnId = null;
 
+function resetFieldSemanticEditor() {
+    document.getElementById('fieldSemanticPanel').classList.add('d-none');
+    currentSemanticColumnId = null;
+    document.getElementById('semanticColumnPath').textContent = '';
+    document.getElementById('semanticFieldContext').textContent = '';
+    document.getElementById('fieldSemanticResult').innerHTML = '';
+    document.getElementById('semanticBusinessAlias').value = '';
+    document.getElementById('semanticMeaning').value = '';
+    document.getElementById('semanticUnit').value = '';
+    document.getElementById('semanticEnumValues').value = '';
+    document.getElementById('semanticQualityNote').value = '';
+    document.getElementById('semanticGovernedBy').value = '';
+}
+
 async function showTicket(id) {
     currentTicketId = id;
-    currentSemanticColumnId = null;
+    resetFieldSemanticEditor();
     const modal = new bootstrap.Modal(document.getElementById('ticketModal'));
     document.getElementById('ticketDetail').innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div></div>';
     document.getElementById('ticketActionResult').innerHTML = '';
-    document.getElementById('fieldSemanticPanel').classList.add('d-none');
-    document.getElementById('fieldSemanticResult').innerHTML = '';
     modal.show();
 
     const resp = await fetch(`/api/governance/${id}`);
@@ -210,8 +222,7 @@ async function showTicket(id) {
 function renderFieldSemanticEditor(ticket) {
     const panel = document.getElementById('fieldSemanticPanel');
     if (!ticket.field_context) {
-        panel.classList.add('d-none');
-        currentSemanticColumnId = null;
+        resetFieldSemanticEditor();
         return;
     }
 
@@ -280,15 +291,23 @@ async function saveTicketAction() {
     }
 }
 async function saveFieldSemantic() {
+    const btn = document.getElementById('saveFieldSemantic');
+    const resultEl = document.getElementById('fieldSemanticResult');
     if (!currentSemanticColumnId) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Please select a field first.</span>';
         return;
     }
 
-    const btn = document.getElementById('saveFieldSemantic');
-    const resultEl = document.getElementById('fieldSemanticResult');
+    const businessAlias = document.getElementById('semanticBusinessAlias').value.trim();
+    const meaning = document.getElementById('semanticMeaning').value.trim();
+    if (!businessAlias || !meaning) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Business alias and meaning are required.</span>';
+        return;
+    }
+
     const params = new URLSearchParams({
-        business_alias: document.getElementById('semanticBusinessAlias').value.trim(),
-        meaning: document.getElementById('semanticMeaning').value.trim(),
+        business_alias: businessAlias,
+        meaning: meaning,
     });
 
     const optionalFields = [

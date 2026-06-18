@@ -564,7 +564,9 @@ def test_governance_modal_has_field_semantic_editor_controls(client):
     assert "fieldSemanticPanel" in resp.text
     assert "semanticBusinessAlias" in resp.text
     assert "semanticMeaning" in resp.text
+    assert "semanticUnit" in resp.text
     assert "semanticEnumValues" in resp.text
     assert "semanticQualityNote" in resp.text
     assert "semanticGovernedBy" in resp.text
     assert "saveFieldSemantic" in resp.text
+    assert "fieldSemanticResult" in resp.text
