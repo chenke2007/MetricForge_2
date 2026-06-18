@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..models import GovernanceTicket, get_session
+from ..models import ColumnMetadata, GovernanceTicket, get_session
 
 router = APIRouter()
 
@@ -54,6 +54,36 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
     t = db.query(GovernanceTicket).filter(GovernanceTicket.id == ticket_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="治理待办不存在")
+    field_context = None
+    field_semantic = None
+    if t.related_object_type == "column" and t.related_object_id:
+        column = db.query(ColumnMetadata).filter(ColumnMetadata.id == t.related_object_id).first()
+        if column:
+            field_context = {
+                "id": column.id,
+                "schema_name": column.table.schema_name,
+                "table_name": column.table.table_name,
+                "column_name": column.column_name,
+                "column_type": column.column_type,
+                "nullable": column.nullable,
+                "comment": column.comment,
+                "is_primary_key": column.is_primary_key,
+                "is_foreign_key": column.is_foreign_key,
+                "enum_samples": column.enum_samples,
+            }
+            semantic = column.semantic
+            if semantic:
+                field_semantic = {
+                    "id": semantic.id,
+                    "business_alias": semantic.business_alias,
+                    "meaning": semantic.meaning,
+                    "unit": semantic.unit,
+                    "enum_values": semantic.enum_values,
+                    "data_quality_note": semantic.data_quality_note,
+                    "is_governed": semantic.is_governed,
+                    "governed_by": semantic.governed_by,
+                    "governed_at": str(semantic.governed_at) if semantic.governed_at else None,
+                }
     return {
         "id": t.id,
         "ticket_type": t.ticket_type,
@@ -70,6 +100,8 @@ def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
         "resolved_at": str(t.resolved_at) if t.resolved_at else None,
         "created_at": str(t.created_at),
         "updated_at": str(t.updated_at),
+        "field_context": field_context,
+        "field_semantic": field_semantic,
     }
 
 

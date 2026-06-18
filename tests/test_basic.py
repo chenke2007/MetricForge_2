@@ -496,3 +496,61 @@ def test_get_field_semantic_returns_column_context(client, db_session):
         assert data["semantic"]["meaning"] == "\u5ba2\u6237\u5206\u5c42\u7b49\u7ea7\u7f16\u7801"
     finally:
         db.close()
+
+
+def test_governance_detail_returns_field_context_for_column_ticket(client, db_session):
+    """Column governance ticket details include field context."""
+    _ = db_session
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="\u5f85\u529e\u5b57\u6bb5\u6570\u636e\u6e90",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="DWS",
+            table_name="ORDER_SUMMARY",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="PAY_STATUS",
+            column_type="VARCHAR2(10)",
+            nullable=True,
+            comment="\u652f\u4ed8\u72b6\u6001",
+            column_id=3,
+        )
+        db.add(column)
+        db.flush()
+        ticket = GovernanceTicket(
+            ticket_type="missing_semantic",
+            title="\u5b57\u6bb5\u8bed\u4e49\u7f3a\u5931: DWS.ORDER_SUMMARY.PAY_STATUS",
+            description="\u5b57\u6bb5 PAY_STATUS \u7f3a\u5c11\u4e1a\u52a1\u542b\u4e49\u89e3\u91ca",
+            source="auto_detect",
+            related_object_type="column",
+            related_object_id=column.id,
+            priority="medium",
+            status="open",
+        )
+        db.add(ticket)
+        db.commit()
+
+        resp = client.get(f"/api/governance/{ticket.id}")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["field_context"]["schema_name"] == "DWS"
+        assert data["field_context"]["table_name"] == "ORDER_SUMMARY"
+        assert data["field_context"]["column_name"] == "PAY_STATUS"
+        assert data["field_semantic"] is None
+    finally:
+        db.close()
