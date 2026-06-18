@@ -21,6 +21,7 @@ def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None, db:
             .filter(
                 GovernanceTicket.related_object_type == "column",
                 GovernanceTicket.related_object_id == column_id,
+                GovernanceTicket.ticket_type == "missing_semantic",
                 GovernanceTicket.status.in_(["open", "in_progress"]),
             )
             .all()

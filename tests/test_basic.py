@@ -369,6 +369,91 @@ def test_save_field_semantic_closes_related_ticket(client, db_session):
         db.close()
 
 
+def test_save_field_semantic_only_closes_missing_semantic_ticket(client, db_session):
+    """Saving a field semantic leaves non-semantic governance tickets open."""
+    _ = db_session
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="semantic scoped datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="DWD",
+            table_name="CONTRACT",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="STATUS",
+            column_type="VARCHAR2(20)",
+            nullable=True,
+            comment="status",
+            column_id=1,
+        )
+        db.add(column)
+        db.flush()
+        missing_semantic_ticket = GovernanceTicket(
+            ticket_type="missing_semantic",
+            title="Missing semantic: DWD.CONTRACT.STATUS",
+            description="STATUS is missing business meaning",
+            source="auto_detect",
+            related_object_type="column",
+            related_object_id=column.id,
+            priority="medium",
+            status="open",
+        )
+        permission_ticket = GovernanceTicket(
+            ticket_type="permission_issue",
+            title="Permission issue: DWD.CONTRACT.STATUS",
+            description="STATUS requires permission review",
+            source="manual",
+            related_object_type="column",
+            related_object_id=column.id,
+            priority="medium",
+            status="open",
+        )
+        db.add_all([missing_semantic_ticket, permission_ticket])
+        db.commit()
+
+        resp = client.put(
+            f"/api/field-semantics/columns/{column.id}",
+            params={
+                "business_alias": "Contract status",
+                "meaning": "Current lifecycle state of the contract",
+                "governed_by": "semantic steward",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["closed_tickets"] == 1
+
+        db.expire_all()
+        closed_ticket = (
+            db.query(GovernanceTicket)
+            .filter(GovernanceTicket.id == missing_semantic_ticket.id)
+            .one()
+        )
+        still_open_ticket = (
+            db.query(GovernanceTicket)
+            .filter(GovernanceTicket.id == permission_ticket.id)
+            .one()
+        )
+        assert closed_ticket.status == "resolved"
+        assert still_open_ticket.status == "open"
+    finally:
+        db.close()
+
+
 def test_save_field_semantic_rolls_back_when_ticket_auto_resolve_fails(app, db_session, monkeypatch):
     """Semantic save rolls back if related ticket auto-resolution fails."""
     from fastapi.testclient import TestClient
