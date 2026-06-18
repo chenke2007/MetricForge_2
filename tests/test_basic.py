@@ -562,6 +562,8 @@ def test_governance_modal_has_field_semantic_editor_controls(client):
 
     assert resp.status_code == 200
     assert "fieldSemanticPanel" in resp.text
+    assert "semanticColumnPath" in resp.text
+    assert "semanticFieldContext" in resp.text
     assert "semanticBusinessAlias" in resp.text
     assert "semanticMeaning" in resp.text
     assert "semanticUnit" in resp.text
