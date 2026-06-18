@@ -28,9 +28,13 @@
                 {% for s in semantics %}
                 <tr>
                     <td class="fw-bold">
+                        {% if s.column and s.column.table %}
                         {{ s.column.table.schema_name }}.{{ s.column.table.table_name }}.{{ s.column.column_name }}
+                        {% else %}
+                        字段 #{{ s.column_id }}
+                        {% endif %}
                     </td>
-                    <td><span class="badge bg-light text-dark">{{ s.column.column_type }}</span></td>
+                    <td><span class="badge bg-light text-dark">{{ s.column.column_type if s.column and s.column.table else '-' }}</span></td>
                     <td>{{ s.business_alias or '-' }}</td>
                     <td class="text-muted small">{{ s.meaning[:40] + '...' if s.meaning and s.meaning|length > 40 else s.meaning or '-' }}</td>
                     <td>{{ s.unit or '-' }}</td>

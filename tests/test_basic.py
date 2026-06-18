@@ -626,3 +626,27 @@ def test_field_semantics_page_shows_column_path(client, db_session):
         assert "\u6cbb\u7406\u4e13\u5458" in resp.text
     finally:
         db.close()
+
+
+def test_field_semantics_page_tolerates_orphan_semantic(client, db_session):
+    """Field semantic list tolerates semantics whose column no longer exists."""
+    _ = db_session
+    db = get_session()
+    try:
+        db.add(
+            FieldSemantic(
+                column_id=999,
+                business_alias="\u5b64\u513f\u8bed\u4e49",
+                meaning="\u7f3a\u5931\u5b57\u6bb5\u5173\u7cfb",
+                is_governed=False,
+            )
+        )
+        db.commit()
+
+        resp = client.get("/web/field-semantics")
+
+        assert resp.status_code == 200
+        assert "\u5b57\u6bb5 #999" in resp.text
+        assert "\u5b64\u513f\u8bed\u4e49" in resp.text
+    finally:
+        db.close()
