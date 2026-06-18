@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}数据源: {{ ds.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-plug me-2"></i>{{ ds.name }}</h4>
+        <a href="/web/datasources" class="text-decoration-none small">&larr; 返回列表</a>
+    </div>
+    <div>
+        <button id="testConnBtn" class="btn btn-outline-info btn-sm" data-ds-id="{{ ds.id }}"><i class="bi bi-plug"></i> 测试连接</button>
+        <span id="testResult" class="ms-2 small"></span>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">基本信息</span></div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">类型</dt>
+                    <dd class="col-sm-9"><span class="badge bg-dark">{{ ds.ds_type }}</span></dd>
+                    <dt class="col-sm-3">地址</dt>
+                    <dd class="col-sm-9">{{ ds.host }}:{{ ds.port }}</dd>
+                    <dt class="col-sm-3">服务名</dt>
+                    <dd class="col-sm-9">{{ ds.service_name or '-' }}</dd>
+                    <dt class="col-sm-3">用户名</dt>
+                    <dd class="col-sm-9">{{ ds.username }}</dd>
+                    <dt class="col-sm-3">关注 Schema</dt>
+                    <dd class="col-sm-9">{{ ds.schema_names or '（全部）' }}</dd>
+                    <dt class="col-sm-3">创建时间</dt>
+                    <dd class="col-sm-9">{{ ds.created_at.strftime('%Y-%m-%d %H:%M:%S') if ds.created_at else '-' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">已采集表</span></div>
+            <div class="card-body text-center py-4">
+                <div class="stat-number">{{ tables|length }}</div>
+                <div class="stat-label">张表</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if tables %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-table me-1"></i>表列表</span>
+        <span class="text-muted small">{{ tables|length }} 张表</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Schema</th>
+                    <th>表名</th>
+                    <th>类型</th>
+                    <th>注释</th>
+                    <th>预估行数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tables %}
+                <tr>
+                    <td><span class="badge bg-secondary">{{ t.schema_name }}</span></td>
+                    <td class="fw-bold">{{ t.table_name }}</td>
+                    <td>{{ t.table_type }}</td>
+                    <td class="text-muted small">{{ t.table_comment or '-' }}</td>
+                    <td>{{ t.row_count_est or '-' }}</td>
+                    <td><a href="/web/metadata/{{ t.id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>尚未采集元数据。配置 Oracle 连接后在元数据页面触发采集。
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('testConnBtn')?.addEventListener('click', async function() {
+    const btn = this;
+    const resultEl = document.getElementById('testResult');
+    const dsId = btn.dataset.dsId;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 测试中...';
+    resultEl.innerHTML = '';
+
+    try {
+        const resp = await fetch('/api/datasources/' + dsId + '/test-connection', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 连接成功</span>';
+        } else {
+            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' + (data.message || '连接失败') + '</span>';
+        }
+    } catch (err) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug"></i> 测试连接';
+    }
+});
+</script>
+{% endblock %}

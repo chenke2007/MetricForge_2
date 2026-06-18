@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}新建指标{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1"><i class="bi bi-bar-chart me-2"></i>新建指标</h4>
+    <a href="/web/metrics" class="text-decoration-none small">&larr; 返回列表</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form class="row g-3" onsubmit="return createMetric(event)">
+            <div class="col-md-4">
+                <label class="form-label">指标编码 <span class="text-danger">*</span></label>
+                <input type="text" id="metric_code" class="form-control" required placeholder="如：M_AMT_INVEST">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">指标名称 <span class="text-danger">*</span></label>
+                <input type="text" id="metric_name" class="form-control" required placeholder="如：投放金额">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">分类</label>
+                <input type="text" id="category" class="form-control" placeholder="如：资产类">
+            </div>
+            <div class="col-12">
+                <label class="form-label">业务定义</label>
+                <textarea id="definition" class="form-control" rows="3" placeholder="指标的业务含义和用途说明"></textarea>
+            </div>
+            <div class="col-12">
+                <label class="form-label">计算公式</label>
+                <textarea id="formula" class="form-control" rows="2" placeholder="如：SUM(act_pay_amt) WHERE contract_status = 'ACTIVE'"></textarea>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">来源表</label>
+                <input type="text" id="source_table" class="form-control" placeholder="如：DWD_CONTRACT">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">负责人</label>
+                <input type="text" id="owner" class="form-control" placeholder="如：张三">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 保存</button>
+                <a href="/web/metrics" class="btn btn-outline-secondary">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+async function createMetric(e) {
+    const params = new URLSearchParams({
+        metric_code: document.getElementById('metric_code').value,
+        metric_name: document.getElementById('metric_name').value,
+        category: document.getElementById('category').value,
+        definition: document.getElementById('definition').value,
+        formula: document.getElementById('formula').value,
+        source_table: document.getElementById('source_table').value,
+        owner: document.getElementById('owner').value,
+    });
+    const resp = await fetch('/api/metrics/?' + params.toString(), { method: 'POST' });
+    if (resp.ok) {
+        window.location.href = '/web/metrics';
+    } else {
+        const err = await resp.json();
+        alert('创建失败: ' + (err.detail || '未知错误'));
+    }
+    return false;
+}
+</script>
+{% endblock %}

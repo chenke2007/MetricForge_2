@@ -1,0 +1,179 @@
+"""模型基础测试"""
+
+from sqlalchemy import inspect
+
+from app.models import (
+    DatasourceConfig,
+    MetricDefinition,
+    MetricCaliber,
+    GovernanceTicket,
+)
+
+
+def test_create_datasource(db_session):
+    """测试创建数据源"""
+    ds = DatasourceConfig(
+        name="测试 Oracle",
+        ds_type="oracle",
+        host="10.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DW,DWD",
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    saved = db_session.query(DatasourceConfig).first()
+    assert saved is not None
+    assert saved.name == "测试 Oracle"
+    assert saved.ds_type == "oracle"
+    assert saved.is_active is True
+    assert saved.schema_names == "DW,DWD"
+
+
+def test_create_metric(db_session):
+    """测试创建指标"""
+    metric = MetricDefinition(
+        metric_code="M_AMT_INVEST",
+        metric_name="投放金额",
+        category="资产类",
+        definition="统计期间内所有已投放项目的合同金额总和",
+        formula="SUM(act_pay_amt)",
+        owner="张三",
+        status="draft",
+    )
+    db_session.add(metric)
+    db_session.commit()
+
+    saved = db_session.query(MetricDefinition).first()
+    assert saved is not None
+    assert saved.metric_code == "M_AMT_INVEST"
+    assert saved.owner == "张三"
+    assert saved.status == "draft"
+
+    # 添加口径
+    caliber = MetricCaliber(
+        metric_id=saved.id,
+        caliber_name="自然月",
+        caliber_rule="按自然月统计，每月1日至月末最后一天",
+        filter_template="TRUNC(report_date, 'MM') = :target_month",
+        is_default=True,
+    )
+    db_session.add(caliber)
+    db_session.commit()
+
+    assert len(saved.calibers) == 1
+    assert saved.calibers[0].caliber_name == "自然月"
+
+
+def test_create_governance_ticket(db_session):
+    """测试创建治理待办"""
+    ticket = GovernanceTicket(
+        ticket_type="missing_semantic",
+        title="字段语义缺失: DWD_CONTRACT.STATUS",
+        description="字段 STATUS 缺少业务含义解释",
+        source="auto_detect",
+        related_object_type="column",
+        related_object_id=1,
+        priority="high",
+        status="open",
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    saved = db_session.query(GovernanceTicket).first()
+    assert saved is not None
+    assert saved.ticket_type == "missing_semantic"
+    assert saved.priority == "high"
+    assert saved.status == "open"
+
+
+def test_create_app_uses_explicit_database_url(tmp_path):
+    """测试 create_app 使用显式传入的数据库 URL 初始化数据库"""
+    from app.main import create_app
+    from app.models import get_engine
+
+    db_path = tmp_path / "metricforge-test.db"
+
+    create_app(database_url=f"sqlite:///{db_path}")
+
+    assert db_path.exists()
+    table_names = inspect(get_engine()).get_table_names()
+    assert "datasource_config" in table_names
+    assert "metric_definition" in table_names
+
+
+def test_resolve_database_url_falls_back_when_config_is_invalid(tmp_path, monkeypatch):
+    """测试配置文件损坏时数据库 URL 回退到默认 SQLite"""
+    from app.main import DEFAULT_DATABASE_URL, _resolve_database_url
+
+    monkeypatch.delenv("METRICFORGE_DB_URL", raising=False)
+    bad_config = tmp_path / "bad-config.yaml"
+    bad_config.write_text("database: [", encoding="utf-8")
+
+    assert _resolve_database_url(config_path=str(bad_config)) == DEFAULT_DATABASE_URL
+
+
+def test_health_check(client):
+    """测试健康检查接口"""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["version"] == "0.1.0"
+
+
+def test_list_datasources_empty(client):
+    """测试空数据源列表"""
+    resp = client.get("/api/datasources/")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_create_datasource_api(client):
+    """测试通过 API 创建数据源"""
+    resp = client.post("/api/datasources/?" + "name=测试&host=10.0.0.1&port=1521&username=ro&ds_type=oracle")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "数据源创建成功"
+
+    # 验证列表
+    resp = client.get("/api/datasources/")
+    assert len(resp.json()) == 1
+
+
+def test_create_metric_api(client):
+    """测试通过 API 创建指标"""
+    resp = client.post("/api/metrics/?" + "metric_code=M_TEST&metric_name=测试指标&category=测试&owner=Tester")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "指标创建成功"
+
+    # 验证列表
+    resp = client.get("/api/metrics/")
+    metrics = resp.json()
+    assert len(metrics) == 1
+    assert metrics[0]["metric_code"] == "M_TEST"
+
+
+def test_dashboard_page(client):
+    """测试仪表盘页面"""
+    resp = client.get("/web/dashboard")
+    assert resp.status_code == 200
+    assert "MetricForge" in resp.text
+    assert "仪表盘" in resp.text
+
+
+def test_metric_page(client):
+    """测试指标管理页面"""
+    resp = client.get("/web/metrics")
+    assert resp.status_code == 200
+    assert "指标管理" in resp.text
+
+
+def test_governance_page(client):
+    """测试治理待办页面"""
+    resp = client.get("/web/governance")
+    assert resp.status_code == 200
+    assert "治理待办" in resp.text

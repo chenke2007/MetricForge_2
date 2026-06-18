@@ -1,0 +1,89 @@
+# app/config/app_config.yaml
+# ===== MetricForge 主配置文件 =====
+# 阶段 0/1 启用基础配置；向量库、RAG、路由在阶段 3/4 启用
+
+app:
+  name: MetricForge
+  version: 0.1.0
+  debug: true
+
+database:
+  url: sqlite:///./data/metricforge.db     # 开发阶段用 SQLite，生产可切换 PostgreSQL
+
+datasource_adapters:
+  enabled: true
+  default: oracle
+  oracle:
+    lib_dir: ./oracle_instantclient    # Oracle Instant Client 路径（Windows）
+
+metadata_collection:
+  enabled: true
+  include_schemas:
+    - DW
+    - DWD
+    - DWS
+    - ADS
+  exclude_tables:
+    - TEMP_%
+    - TEST_%
+    - BAK_%
+  collect_profile:
+    enabled: true
+    include_distinct_count: true
+    include_null_rate: true
+    include_enum_samples: true
+    max_enum_samples: 20
+    profile_timeout_seconds: 300      # 每张表字段画像超时
+    sample_percent: 1.0               # Oracle SAMPLE 子句采样百分比
+    parallel_degree: 1                # 串行执行，避免压垮源库
+    skip_tables_over_millions: 100    # 超过 1 亿行的表跳过画像
+
+metric_governance:
+  enabled: true
+  import_path: ./data/metrics
+  require_metric_code: true
+  require_owner: true
+  require_review_status: true
+
+governance_ticket:
+  auto_create_on_missing_semantic: true
+  auto_create_on_unclear_relation: true
+
+# ===== 以下为阶段 2-4 预留配置 =====
+# llm:
+#   provider: local
+#   model: qwen
+#   endpoint: http://127.0.0.1:8000/v1/chat/completions
+#
+# vector_store:
+#   type: pgvector
+#   dimension: 1024
+#
+# embedding:
+#   model: bge-m3
+#
+# retrieval:
+#   top_k: 8
+#   score_threshold: 0.55
+#   rerank: true
+#   rerank_model: bge-reranker-v2-m3
+#
+# schema_linking:
+#   enabled: false
+#
+# routing:
+#   levels:
+#     L1_standard_service:
+#       require_metric_hit: true
+#     L2_trusted_enhancement:
+#       require_sql_validation: true
+#     L3_exploration_assist:
+#       mark_result_as_unverified: true
+#     L4_governance_ticket:
+#       create_ticket_on_low_confidence: true
+#
+# sql_guard:
+#   readonly_only: true
+#   default_dialect: oracle
+#   max_rows: 1000
+#   timeout_seconds: 60

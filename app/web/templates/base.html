@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MetricForge{% endblock %} — AI 智能问数与报表 SQL 开发平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body { background: #f5f6fa; font-size: .9rem; }
+        .sidebar { width: 220px; min-height: calc(100vh - 56px); background: #fff; border-right: 1px solid #e3e6f0; }
+        .sidebar .nav-link { color: #555; padding: .6rem 1rem; border-radius: 0; border-left: 3px solid transparent; }
+        .sidebar .nav-link:hover { background: #f8f9fc; color: #333; }
+        .sidebar .nav-link.active { background: #eef2ff; color: #4e73df; border-left-color: #4e73df; font-weight: 600; }
+        .sidebar .nav-link i { width: 20px; margin-right: 6px; }
+        .content { flex: 1; padding: 1.5rem; min-width: 0; }
+        .stat-card { background: #fff; border: 1px solid #e3e6f0; border-radius: .5rem; padding: 1.2rem; }
+        .stat-card .stat-number { font-size: 1.8rem; font-weight: 700; color: #4e73df; }
+        .stat-card .stat-label { color: #858796; font-size: .8rem; }
+        .page-header { margin-bottom: 1.5rem; }
+        .table-hover tbody tr:hover { background: #f8f9fc; }
+        .badge-status { font-size: .75rem; padding: .25em .6em; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar navbar-expand navbar-dark bg-dark px-3" style="height:56px;">
+        <a class="navbar-brand fw-bold" href="/web/dashboard">
+            <i class="bi bi-grid-3x3-gap-fill me-2"></i>MetricForge
+        </a>
+        <span class="badge bg-secondary ms-2">v0.1</span>
+        <div class="ms-auto d-flex align-items-center gap-3">
+            <span class="text-light-emphasis small">AI 智能问数平台</span>
+        </div>
+    </nav>
+
+    <div class="d-flex">
+        <!-- 左侧边栏 -->
+        <div class="sidebar d-flex flex-column py-2">
+            <a href="/web/dashboard" class="nav-link {% if request.url.path == '/web/dashboard' %}active{% endif %}">
+                <i class="bi bi-speedometer2"></i>仪表盘
+            </a>
+            <a href="/web/datasources" class="nav-link {% if 'datasource' in request.url.path %}active{% endif %}">
+                <i class="bi bi-plug"></i>数据源
+            </a>
+            <a href="/web/metadata" class="nav-link {% if 'metadata' in request.url.path and 'field' not in request.url.path %}active{% endif %}">
+                <i class="bi bi-table"></i>元数据
+            </a>
+            <a href="/web/metrics" class="nav-link {% if 'metric' in request.url.path %}active{% endif %}">
+                <i class="bi bi-bar-chart"></i>指标管理
+            </a>
+            <a href="/web/field-semantics" class="nav-link {% if 'field-semantic' in request.url.path %}active{% endif %}">
+                <i class="bi bi-tags"></i>字段语义
+            </a>
+            <a href="/web/governance" class="nav-link {% if 'governance' in request.url.path %}active{% endif %}">
+                <i class="bi bi-check2-square"></i>治理待办
+            </a>
+            <hr class="my-2">
+            <a href="/docs" class="nav-link" target="_blank">
+                <i class="bi bi-file-text"></i>API 文档
+            </a>
+        </div>
+
+        <!-- 主内容 -->
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

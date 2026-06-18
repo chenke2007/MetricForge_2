@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}指标管理{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-bar-chart me-2"></i>指标管理</h4>
+        <p class="text-muted small mb-0">指标定义、口径管理、审核发布</p>
+    </div>
+    <a href="/web/metrics/new" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新建指标</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if metrics %}
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>编码</th>
+                    <th>名称</th>
+                    <th>分类</th>
+                    <th>来源表</th>
+                    <th>负责人</th>
+                    <th>版本</th>
+                    <th>状态</th>
+                    <th>启用</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in metrics %}
+                <tr>
+                    <td><span class="badge bg-secondary">{{ m.metric_code }}</span></td>
+                    <td><a href="/web/metrics/{{ m.id }}" class="fw-bold text-decoration-none">{{ m.metric_name }}</a></td>
+                    <td>{{ m.category or '-' }}</td>
+                    <td class="text-muted small">{{ m.source_table or '-' }}</td>
+                    <td>{{ m.owner or '-' }}</td>
+                    <td>{{ m.version }}</td>
+                    <td>
+                        {% if m.status == 'published' %}<span class="badge bg-success">已发布</span>
+                        {% elif m.status == 'approved' %}<span class="badge bg-info">已审核</span>
+                        {% elif m.status == 'pending_review' %}<span class="badge bg-warning text-dark">待审核</span>
+                        {% elif m.status == 'deprecated' %}<span class="badge bg-secondary">已废弃</span>
+                        {% else %}<span class="badge bg-light text-dark">草稿</span>
+                        {% endif %}
+                    </td>
+                    <td>{% if m.is_active %}<span class="text-success">Y</span>{% else %}<span class="text-danger">N</span>{% endif %}</td>
+                    <td><a href="/web/metrics/{{ m.id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-bar-chart fs-1 d-block mb-3"></i>
+            <p>尚未定义指标</p>
+            <p class="small">请先导入指标字典或手动创建指标</p>
+            <a href="/web/metrics/new" class="btn btn-primary btn-sm">新建指标</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

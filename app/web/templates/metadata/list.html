@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}元数据浏览{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-table me-2"></i>元数据浏览</h4>
+        <p class="text-muted small mb-0">浏览已采集的表结构、字段、索引和约束信息</p>
+    </div>
+    <div>
+        <form method="get" action="/web/metadata" class="d-flex gap-2">
+            <select name="schema_name" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">所有 Schema</option>
+                {% for s in schemas %}
+                <option value="{{ s }}" {% if current_schema == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="search" class="form-control form-control-sm" placeholder="搜索表名..." value="{{ search or '' }}" style="width:180px;">
+            <button class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if tables %}
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Schema</th>
+                    <th>表名</th>
+                    <th>类型</th>
+                    <th>注释</th>
+                    <th>预估行数</th>
+                    <th>敏感</th>
+                    <th>采集时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tables %}
+                <tr>
+                    <td><span class="badge bg-secondary">{{ t.schema_name }}</span></td>
+                    <td><a href="/web/metadata/{{ t.id }}" class="fw-bold text-decoration-none">{{ t.table_name }}</a></td>
+                    <td>{{ t.table_type }}</td>
+                    <td class="text-muted small" title="{{ t.table_comment }}">{{ t.table_comment[:40] + '...' if t.table_comment and t.table_comment|length > 40 else t.table_comment or '-' }}</td>
+                    <td>{{ t.row_count_est or '-' }}</td>
+                    <td>{% if t.is_sensitive %}<span class="badge bg-danger">敏感</span>{% else %}<span class="badge bg-secondary">否</span>{% endif %}</td>
+                    <td class="text-muted">{{ t.collected_at.strftime('%Y-%m-%d') if t.collected_at else '-' }}</td>
+                    <td><a href="/web/metadata/{{ t.id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-table fs-1 d-block mb-3"></i>
+            <p>尚无采集数据</p>
+            <p class="small">请先配置数据源并执行元数据采集</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

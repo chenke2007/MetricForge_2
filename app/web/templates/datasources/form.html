@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{% if ds %}数据源: {{ ds.name }}{% else %}新建数据源{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1"><i class="bi bi-plug me-2"></i>{% if ds %}数据源: {{ ds.name }}{% else %}新建数据源{% endif %}</h4>
+    <a href="/web/datasources" class="text-decoration-none small">&larr; 返回列表</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form id="dsForm" class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">名称 <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" required placeholder="如：生产 Oracle 19c">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">类型</label>
+                <select name="ds_type" class="form-select" id="dsType">
+                    <option value="oracle">Oracle</option>
+                    <option value="hive" disabled>Hive（阶段 5）</option>
+                    <option value="postgresql" disabled>PostgreSQL（阶段 5）</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">SQL 方言</label>
+                <select name="dialect" class="form-select">
+                    <option value="oracle">Oracle SQL</option>
+                    <option value="hive" disabled>Hive SQL</option>
+                    <option value="spark" disabled>Spark SQL</option>
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">主机地址 <span class="text-danger">*</span></label>
+                <input type="text" name="host" class="form-control" required placeholder="10.x.x.x 或 hostname">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">端口</label>
+                <input type="number" name="port" class="form-control" value="1521">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Service Name / SID</label>
+                <input type="text" name="service_name" class="form-control" placeholder="ORCLPDB1">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">用户名 <span class="text-danger">*</span></label>
+                <input type="text" name="username" class="form-control" required placeholder="readonly_user">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">密码</label>
+                <input type="password" name="password" class="form-control">
+                <div class="form-text">生产环境建议通过 ORACLE_PASSWORD 环境变量注入</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">关注 Schema</label>
+                <input type="text" name="schema_names" class="form-control" placeholder="DW,DWD,DWS,ADS">
+                <div class="form-text">逗号分隔，留空采集全部</div>
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 保存</button>
+                <button type="button" id="testConnBtn" class="btn btn-outline-info"><i class="bi bi-plug"></i> 测试连接</button>
+                <a href="/web/datasources" class="btn btn-outline-secondary">取消</a>
+                <span id="testResult" class="ms-2 align-self-center"></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// 测试连接
+document.getElementById('testConnBtn').addEventListener('click', async function() {
+    const btn = this;
+    const resultEl = document.getElementById('testResult');
+    const host = document.querySelector('[name="host"]').value.trim();
+    const username = document.querySelector('[name="username"]').value.trim();
+
+    if (!host || !username) {
+        resultEl.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> 请先填写主机和用户名</span>';
+        return;
+    }
+
+    const params = new URLSearchParams({
+        host: host,
+        port: document.querySelector('[name="port"]').value || 1521,
+        service_name: document.querySelector('[name="service_name"]').value || '',
+        username: username,
+        password: document.querySelector('[name="password"]').value || '',
+    });
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 测试中...';
+    resultEl.innerHTML = '';
+
+    try {
+        const resp = await fetch('/api/datasources/test-connection?' + params.toString(), { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 连接成功</span>';
+        } else {
+            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' + (data.message || '连接失败') + '</span>';
+        }
+    } catch (err) {
+        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug"></i> 测试连接';
+    }
+});
+
+// 提交表单（保持不变）
+document.querySelector('#dsForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    const params = new URLSearchParams(fd);
+    const resp = await fetch('/api/datasources/?' + params.toString(), { method: 'POST' });
+    if (resp.ok) {
+        window.location.href = '/web/datasources';
+    } else {
+        const err = await resp.json();
+        alert('创建失败: ' + (err.detail || '未知错误'));
+    }
+});
+</script>
+{% endblock %}

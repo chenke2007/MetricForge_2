@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}仪表盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1"><i class="bi bi-speedometer2 me-2"></i>系统概览</h4>
+    <p class="text-muted small mb-0">MetricForge v0.1 — 阶段 1 运行状态</p>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-number">{{ ds_count }}</div>
+            <div class="stat-label">数据源</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-number">{{ table_count }}</div>
+            <div class="stat-label">已采集表</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-number">{{ metric_count }}</div>
+            <div class="stat-label">已沉淀指标</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-number">{{ open_tickets }}</div>
+            <div class="stat-label">待处理治理项</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- 最近采集 -->
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-arrow-down-circle me-1"></i>最近采集表</span>
+                <a href="/web/metadata" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body p-0">
+                {% if latest_tables %}
+                <table class="table table-hover mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Schema</th>
+                            <th>表名</th>
+                            <th>采集时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in latest_tables %}
+                        <tr>
+                            <td><span class="badge bg-secondary">{{ t.schema_name }}</span></td>
+                            <td><a href="/web/metadata/{{ t.id }}">{{ t.table_name }}</a></td>
+                            <td class="text-muted">{{ t.collected_at.strftime('%Y-%m-%d %H:%M') if t.collected_at else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                    尚无采集数据，请先配置数据源
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近待办 -->
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-list-task me-1"></i>最新治理待办</span>
+                <a href="/web/governance" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_tickets %}
+                <table class="table table-hover mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th>标题</th>
+                            <th>类型</th>
+                            <th>优先级</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in recent_tickets %}
+                        <tr>
+                            <td><a href="/web/governance">{{ t.title[:40] }}{% if t.title|length > 40 %}...{% endif %}</a></td>
+                            <td><span class="badge bg-info">{{ t.ticket_type }}</span></td>
+                            <td>
+                                {% if t.priority == 'high' %}<span class="badge bg-danger">高</span>
+                                {% elif t.priority == 'medium' %}<span class="badge bg-warning text-dark">中</span>
+                                {% else %}<span class="badge bg-secondary">低</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if t.status == 'open' %}<span class="badge bg-primary">待处理</span>
+                                {% elif t.status == 'in_progress' %}<span class="badge bg-warning text-dark">处理中</span>
+                                {% elif t.status == 'resolved' %}<span class="badge bg-success">已解决</span>
+                                {% else %}<span class="badge bg-secondary">已关闭</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-check-circle fs-2 d-block mb-2"></i>
+                    暂无治理待办
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

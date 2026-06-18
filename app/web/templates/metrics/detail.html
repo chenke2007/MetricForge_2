@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}指标: {{ metric.metric_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1"><i class="bi bi-bar-chart me-2"></i>{{ metric.metric_name }}</h4>
+    <a href="/web/metrics" class="text-decoration-none small">&larr; 返回列表</a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">基本信息</span></div>
+            <div class="card-body small">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">编码</dt>
+                    <dd class="col-sm-9"><span class="badge bg-secondary">{{ metric.metric_code }}</span></dd>
+                    <dt class="col-sm-3">英文名</dt>
+                    <dd class="col-sm-9">{{ metric.metric_name_en or '-' }}</dd>
+                    <dt class="col-sm-3">业务别名</dt>
+                    <dd class="col-sm-9">{{ metric.business_aliases or '-' }}</dd>
+                    <dt class="col-sm-3">分类</dt>
+                    <dd class="col-sm-9">{{ metric.category or '-' }}</dd>
+                    <dt class="col-sm-3">状态</dt>
+                    <dd class="col-sm-9">
+                        {% if metric.status == 'published' %}<span class="badge bg-success">已发布</span>
+                        {% elif metric.status == 'approved' %}<span class="badge bg-info">已审核</span>
+                        {% elif metric.status == 'pending_review' %}<span class="badge bg-warning text-dark">待审核</span>
+                        {% else %}<span class="badge bg-light text-dark">草稿</span>
+                        {% endif %}
+                        <span class="ms-2">版本 {{ metric.version }}</span>
+                    </dd>
+                    <dt class="col-sm-3">负责人</dt>
+                    <dd class="col-sm-9">{{ metric.owner or '-' }}</dd>
+                    <dt class="col-sm-3">来源表</dt>
+                    <dd class="col-sm-9">{{ metric.source_table or '-' }}</dd>
+                    <dt class="col-sm-3">默认时间粒度</dt>
+                    <dd class="col-sm-9">{{ metric.default_time_grain or '-' }}</dd>
+                    <dt class="col-sm-3">默认口径</dt>
+                    <dd class="col-sm-9">{{ metric.default_time_caliber or '-' }}</dd>
+                    <dt class="col-sm-3">适用维度</dt>
+                    <dd class="col-sm-9">{{ metric.applicable_dimensions or '-' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white"><span class="fw-bold">操作</span></div>
+            <div class="card-body">
+                <select id="statusSelect" class="form-select form-select-sm mb-2" onchange="updateStatus({{ metric.id }})">
+                    <option value="draft" {% if metric.status == 'draft' %}selected{% endif %}>草稿</option>
+                    <option value="pending_review" {% if metric.status == 'pending_review' %}selected{% endif %}>待审核</option>
+                    <option value="approved" {% if metric.status == 'approved' %}selected{% endif %}>已审核</option>
+                    <option value="published" {% if metric.status == 'published' %}selected{% endif %}>已发布</option>
+                    <option value="deprecated" {% if metric.status == 'deprecated' %}selected{% endif %}>已废弃</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">业务定义</span></div>
+            <div class="card-body small">{{ metric.definition or '（暂无定义）' }}</div>
+        </div>
+    </div>
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">计算公式</span></div>
+            <div class="card-body small"><code>{{ metric.formula or '（暂无公式）' }}</code></div>
+        </div>
+    </div>
+</div>
+
+{% if calibers %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white"><span class="fw-bold">口径映射</span></div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>口径名称</th>
+                    <th>口径说明</th>
+                    <th>SQL 模板</th>
+                    <th>默认</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in calibers %}
+                <tr>
+                    <td class="fw-bold">{{ c.caliber_name }}</td>
+                    <td>{{ c.caliber_rule or '-' }}</td>
+                    <td><code>{{ c.filter_template or '-' }}</code></td>
+                    <td>{% if c.is_default %}<span class="badge bg-success">默认</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<script>
+async function updateStatus(metricId) {
+    const status = document.getElementById('statusSelect').value;
+    const resp = await fetch(`/api/metrics/${metricId}/status?status=${status}`, { method: 'PUT' });
+    if (!resp.ok) {
+        alert('状态更新失败');
+    }
+}
+</script>
+{% endblock %}

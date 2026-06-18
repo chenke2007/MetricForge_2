@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}治理待办{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-check2-square me-2"></i>治理待办</h4>
+        <p class="text-muted small mb-0">指标缺失、字段语义不清、表关系不明等治理事项</p>
+    </div>
+    <div>
+        <select class="form-select form-select-sm" onchange="window.location.href='?status='+this.value">
+            <option value="">全部状态</option>
+            <option value="open">待处理</option>
+            <option value="in_progress">处理中</option>
+            <option value="resolved">已解决</option>
+            <option value="closed">已关闭</option>
+        </select>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if tickets %}
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>标题</th>
+                    <th>类型</th>
+                    <th>来源</th>
+                    <th>优先级</th>
+                    <th>状态</th>
+                    <th>负责人</th>
+                    <th>创建时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tickets %}
+                <tr>
+                    <td class="text-muted">{{ t.id }}</td>
+                    <td><a href="#" class="text-decoration-none" onclick="showTicket({{ t.id }});return false;">{{ t.title[:50] + '...' if t.title|length > 50 else t.title }}</a></td>
+                    <td><span class="badge bg-info">{{ t.ticket_type }}</span></td>
+                    <td class="text-muted">{{ t.source }}</td>
+                    <td>
+                        {% if t.priority == 'high' %}<span class="badge bg-danger">高</span>
+                        {% elif t.priority == 'medium' %}<span class="badge bg-warning text-dark">中</span>
+                        {% else %}<span class="badge bg-secondary">低</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.status == 'open' %}<span class="badge bg-primary">待处理</span>
+                        {% elif t.status == 'in_progress' %}<span class="badge bg-warning text-dark">处理中</span>
+                        {% elif t.status == 'resolved' %}<span class="badge bg-success">已解决</span>
+                        {% else %}<span class="badge bg-secondary">已关闭</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ t.assignee or '-' }}</td>
+                    <td class="text-muted">{{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-check-circle fs-1 d-block mb-3"></i>
+            <p>暂无待办事项</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 详情查看 Modal -->
+<div class="modal fade" id="ticketModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">治理待办详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="ticketDetail">
+                <div class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function showTicket(id) {
+    const modal = new bootstrap.Modal(document.getElementById('ticketModal'));
+    document.getElementById('ticketDetail').innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div></div>';
+    modal.show();
+
+    const resp = await fetch(`/api/governance/${id}`);
+    const t = await resp.json();
+
+    document.getElementById('ticketDetail').innerHTML = `
+        <dl class="row mb-0 small">
+            <dt class="col-sm-3">类型</dt>
+            <dd class="col-sm-9"><span class="badge bg-info">${t.ticket_type}</span></dd>
+            <dt class="col-sm-3">标题</dt>
+            <dd class="col-sm-9 fw-bold">${t.title}</dd>
+            <dt class="col-sm-3">描述</dt>
+            <dd class="col-sm-9">${t.description || '-'}</dd>
+            <dt class="col-sm-3">来源</dt>
+            <dd class="col-sm-9">${t.source}</dd>
+            <dt class="col-sm-3">关联对象</dt>
+            <dd class="col-sm-9">${t.related_object_type ? t.related_object_type + ' #' + t.related_object_id : '-'}</dd>
+            <dt class="col-sm-3">优先级</dt>
+            <dd class="col-sm-9">${t.priority}</dd>
+            <dt class="col-sm-3">状态</dt>
+            <dd class="col-sm-9">${t.status}</dd>
+            <dt class="col-sm-3">负责人</dt>
+            <dd class="col-sm-9">${t.assignee || '-'}</dd>
+            <dt class="col-sm-3">解决方案</dt>
+            <dd class="col-sm-9">${t.resolution || '-'}</dd>
+            <dt class="col-sm-3">创建时间</dt>
+            <dd class="col-sm-9">${t.created_at}</dd>
+        </dl>
+    `;
+}
+</script>
+{% endblock %}

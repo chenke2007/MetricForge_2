@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ table.schema_name }}.{{ table.table_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1">
+        <i class="bi bi-table me-2"></i>
+        <span class="badge bg-secondary">{{ table.schema_name }}</span>
+        {{ table.table_name }}
+    </h4>
+    <a href="/web/metadata" class="text-decoration-none small">&larr; 返回元数据列表</a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">表信息</span></div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">类型</dt>
+                    <dd class="col-sm-9">{{ table.table_type }}</dd>
+                    <dt class="col-sm-3">注释</dt>
+                    <dd class="col-sm-9">{{ table.table_comment or '-' }}</dd>
+                    <dt class="col-sm-3">预估行数</dt>
+                    <dd class="col-sm-9">{{ table.row_count_est or '-' }}</dd>
+                    <dt class="col-sm-3">平均行长</dt>
+                    <dd class="col-sm-9">{{ table.avg_row_len or '-' }} 字节</dd>
+                    <dt class="col-sm-3">块数</dt>
+                    <dd class="col-sm-9">{{ table.num_blocks or '-' }}</dd>
+                    <dt class="col-sm-3">最近分析</dt>
+                    <dd class="col-sm-9">{{ table.last_analyzed_at.strftime('%Y-%m-%d') if table.last_analyzed_at else '-' }}</dd>
+                    <dt class="col-sm-3">敏感表</dt>
+                    <dd class="col-sm-9">{% if table.is_sensitive %}<span class="badge bg-danger">是</span>{% else %}否{% endif %}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">统计</span></div>
+            <div class="card-body text-center">
+                <div class="stat-number">{{ columns|length }}</div>
+                <div class="stat-label">字段数</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white"><span class="fw-bold"><i class="bi bi-list-columns me-1"></i>字段列表</span></div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>字段名</th>
+                    <th>类型</th>
+                    <th>长度</th>
+                    <th>可空</th>
+                    <th>注释</th>
+                    <th>PK</th>
+                    <th>FK</th>
+                    <th>基数</th>
+                    <th>空值率</th>
+                    <th>敏感</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in columns %}
+                <tr>
+                    <td class="text-muted">{{ c.column_id or '-' }}</td>
+                    <td class="fw-bold">{{ c.column_name }}</td>
+                    <td><span class="badge bg-light text-dark">{{ c.column_type }}</span></td>
+                    <td>{{ c.data_length or '-' }}</td>
+                    <td>{% if c.nullable %}<span class="text-success">Y</span>{% else %}<span class="text-danger">N</span>{% endif %}</td>
+                    <td class="text-muted" title="{{ c.comment }}">{{ c.comment[:30] + '...' if c.comment and c.comment|length > 30 else c.comment or '-' }}</td>
+                    <td>{% if c.is_primary_key %}<span class="badge bg-warning text-dark">PK</span>{% endif %}</td>
+                    <td>{% if c.is_foreign_key %}<span class="badge bg-info">FK</span>{% endif %}</td>
+                    <td>{{ c.distinct_count or '-' }}</td>
+                    <td>{{ '%.1f%%'|format(c.null_rate * 100) if c.null_rate is not none else '-' }}</td>
+                    <td>{% if c.is_sensitive %}<span class="badge bg-danger">敏感</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

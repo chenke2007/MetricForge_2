@@ -1,0 +1,30 @@
+# AI 智能问数与报表 SQL 开发平台 — MetricForge
+# Python 3.10+
+
+# === Web 框架 ===
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+jinja2>=3.1.2
+aiofiles>=23.2.1
+python-multipart>=0.0.6
+
+# === 数据库 ===
+sqlalchemy>=2.0.23
+alembic>=1.13.0
+
+# === Oracle 连接 ===
+oracledb>=2.0.0
+
+# === 配置管理 ===
+pyyaml>=6.0.1
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# === 加密 ===
+cryptography>=41.0.0
+
+# === SQL 解析（阶段 2 启用） ===
+# sqlglot>=20.0.0
+
+# === 开发工具 ===
+# python-dotenv>=1.0.0  # 已由 pydantic-settings 覆盖

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}数据源{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-plug me-2"></i>数据源管理</h4>
+        <p class="text-muted small mb-0">配置和管理数据源连接，一期支持 Oracle 19c</p>
+    </div>
+    <a href="/web/datasources/new" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新建数据源</a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if datasources %}
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>地址</th>
+                    <th>端口</th>
+                    <th>用户名</th>
+                    <th>服务名</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ds in datasources %}
+                <tr>
+                    <td><a href="/web/datasources/{{ ds.id }}" class="fw-bold text-decoration-none">{{ ds.name }}</a></td>
+                    <td><span class="badge bg-dark">{{ ds.ds_type }}</span></td>
+                    <td class="text-muted">{{ ds.host }}</td>
+                    <td>{{ ds.port }}</td>
+                    <td>{{ ds.username }}</td>
+                    <td class="text-muted small">{{ ds.service_name or '-' }}</td>
+                    <td>
+                        {% if ds.is_active %}
+                        <span class="badge bg-success">启用</span>
+                        {% else %}
+                        <span class="badge bg-secondary">禁用</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/web/datasources/{{ ds.id }}" class="btn btn-sm btn-outline-primary" title="查看"><i class="bi bi-eye"></i></a>
+                        <button class="btn btn-sm btn-outline-info test-conn-btn" data-ds-id="{{ ds.id }}" title="测试连接"><i class="bi bi-plug"></i></button>
+                        <button class="btn btn-sm btn-outline-danger delete-conn-btn" data-ds-id="{{ ds.id }}" data-ds-name="{{ ds.name }}" title="删除"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-plug fs-1 d-block mb-3"></i>
+            <p>尚未配置数据源</p>
+            <a href="/web/datasources/new" class="btn btn-primary btn-sm">新建数据源</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.querySelectorAll('.test-conn-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const dsId = this.dataset.dsId;
+        const icon = this.querySelector('i');
+        const origHtml = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            const resp = await fetch('/api/datasources/' + dsId + '/test-connection', { method: 'POST' });
+            const data = await resp.json();
+            const msg = data.success ? '✅ 连接成功' : '❌ ' + (data.message || '连接失败');
+            alert(msg);
+        } catch (err) {
+            alert('❌ 请求失败: ' + err.message);
+        } finally {
+            this.disabled = false;
+            this.innerHTML = origHtml;
+        }
+    });
+});
+
+document.querySelectorAll('.delete-conn-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const dsId = this.dataset.dsId;
+        const dsName = this.dataset.dsName;
+        if (!confirm(`确定要删除数据源「${dsName}」吗？\n此操作不可撤销。`)) {
+            return;
+        }
+        try {
+            const resp = await fetch('/api/datasources/' + dsId, { method: 'DELETE' });
+            if (resp.ok) {
+                location.reload();
+            } else {
+                const err = await resp.json();
+                alert('删除失败: ' + (err.detail || '未知错误'));
+            }
+        } catch (err) {
+            alert('❌ 请求失败: ' + err.message);
+        }
+    });
+});
+</script>
+{% endblock %}

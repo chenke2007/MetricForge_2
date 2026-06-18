@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+*.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.claude/
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Oracle Instant Client (downloaded separately)
+oracle_instantclient_23_0/
+
+# Data files (user-provided)
+data/metrics/*.xlsx
+data/metrics/*.xls
+data/history_sql/
