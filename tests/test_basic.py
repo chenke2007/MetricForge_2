@@ -554,3 +554,17 @@ def test_governance_detail_returns_field_context_for_column_ticket(client, db_se
         assert data["field_semantic"] is None
     finally:
         db.close()
+
+
+def test_governance_modal_has_field_semantic_editor_controls(client):
+    """Governance ticket modal includes field semantic editor controls."""
+    resp = client.get("/web/governance")
+
+    assert resp.status_code == 200
+    assert "fieldSemanticPanel" in resp.text
+    assert "semanticBusinessAlias" in resp.text
+    assert "semanticMeaning" in resp.text
+    assert "semanticEnumValues" in resp.text
+    assert "semanticQualityNote" in resp.text
+    assert "semanticGovernedBy" in resp.text
+    assert "saveFieldSemantic" in resp.text
