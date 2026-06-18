@@ -50,6 +50,13 @@ def _serialize_semantic(semantic: FieldSemantic | None) -> dict | None:
     }
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
 @router.get("/columns/{column_id}")
 def get_column_semantic(column_id: int, db: Session = Depends(get_db)):
     """Return column context and existing semantic metadata."""
@@ -83,26 +90,31 @@ def save_column_semantic(
     if not column:
         raise HTTPException(status_code=404, detail="\u5b57\u6bb5\u4e0d\u5b58\u5728")
 
-    semantic = column.semantic
-    if not semantic:
-        semantic = FieldSemantic(column_id=column.id)
-        db.add(semantic)
+    try:
+        semantic = column.semantic
+        if not semantic:
+            semantic = FieldSemantic(column_id=column.id)
+            db.add(semantic)
 
-    semantic.business_alias = business_alias.strip()
-    semantic.meaning = meaning.strip()
-    semantic.unit = unit.strip() if unit else None
-    semantic.enum_values = enum_values.strip() if enum_values else None
-    semantic.data_quality_note = data_quality_note.strip() if data_quality_note else None
-    semantic.is_governed = True
-    semantic.governed_by = governed_by.strip() if governed_by else None
-    semantic.governed_at = datetime.utcnow()
+        semantic.business_alias = business_alias.strip()
+        semantic.meaning = meaning.strip()
+        semantic.unit = _blank_to_none(unit)
+        semantic.enum_values = _blank_to_none(enum_values)
+        semantic.data_quality_note = _blank_to_none(data_quality_note)
+        semantic.is_governed = True
+        semantic.governed_by = _blank_to_none(governed_by)
+        semantic.governed_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(semantic)
+        db.flush()
+        closed_count = auto_resolve_ticket_on_semantic(column_id, semantic.governed_by, db=db)
+        semantic_id = semantic.id
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-    closed_count = auto_resolve_ticket_on_semantic(column_id, semantic.governed_by)
     return {
         "message": "\u5b57\u6bb5\u8bed\u4e49\u5df2\u4fdd\u5b58",
-        "semantic_id": semantic.id,
+        "semantic_id": semantic_id,
         "closed_tickets": closed_count,
     }

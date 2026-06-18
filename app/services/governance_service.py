@@ -3,14 +3,18 @@
 import logging
 from datetime import datetime
 
+from sqlalchemy.orm import Session
+
 from ..models import GovernanceTicket, get_session
 
 logger = logging.getLogger(__name__)
 
 
-def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None) -> int:
+def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None, db: Session = None) -> int:
     """Auto-resolve open tickets related to a governed column semantic."""
-    db = get_session()
+    owns_session = db is None
+    if owns_session:
+        db = get_session()
     try:
         tickets = (
             db.query(GovernanceTicket)
@@ -27,16 +31,19 @@ def auto_resolve_ticket_on_semantic(column_id: int, governed_by: str = None) -> 
             ticket.resolved_at = datetime.utcnow()
             if governed_by:
                 ticket.assignee = governed_by
-        db.commit()
+        if owns_session:
+            db.commit()
         if tickets:
             logger.info("Auto-resolved %d governance tickets (column_id=%s)", len(tickets), column_id)
         return len(tickets)
     except Exception as e:
-        db.rollback()
+        if owns_session:
+            db.rollback()
         logger.error("Failed to auto-resolve governance tickets: %s", e)
         raise
     finally:
-        db.close()
+        if owns_session:
+            db.close()
 
 
 def get_open_ticket_count() -> int:

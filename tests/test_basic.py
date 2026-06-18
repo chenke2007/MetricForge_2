@@ -338,7 +338,7 @@ def test_save_field_semantic_closes_related_ticket(client, db_session):
             params={
                 "business_alias": "\u5408\u540c\u72b6\u6001",
                 "meaning": "\u8868\u793a\u5408\u540c\u5f53\u524d\u751f\u547d\u5468\u671f\u72b6\u6001",
-                "unit": "",
+                "unit": "   ",
                 "enum_values": '{"A":"\u6709\u6548","I":"\u65e0\u6548"}',
                 "data_quality_note": "\u5386\u53f2\u6570\u636e\u5b58\u5728\u7a7a\u503c",
                 "governed_by": "\u6cbb\u7406\u4e13\u5458",
@@ -354,6 +354,7 @@ def test_save_field_semantic_closes_related_ticket(client, db_session):
         semantic = db.query(FieldSemantic).filter(FieldSemantic.column_id == column.id).one()
         assert semantic.business_alias == "\u5408\u540c\u72b6\u6001"
         assert semantic.meaning == "\u8868\u793a\u5408\u540c\u5f53\u524d\u751f\u547d\u5468\u671f\u72b6\u6001"
+        assert semantic.unit is None
         assert semantic.enum_values == '{"A":"\u6709\u6548","I":"\u65e0\u6548"}'
         assert semantic.data_quality_note == "\u5386\u53f2\u6570\u636e\u5b58\u5728\u7a7a\u503c"
         assert semantic.is_governed is True
@@ -364,6 +365,75 @@ def test_save_field_semantic_closes_related_ticket(client, db_session):
         assert closed_ticket.status == "resolved"
         assert closed_ticket.resolution == "\u5b57\u6bb5\u8bed\u4e49\u5df2\u6cbb\u7406"
         assert closed_ticket.assignee == "\u6cbb\u7406\u4e13\u5458"
+    finally:
+        db.close()
+
+
+def test_save_field_semantic_rolls_back_when_ticket_auto_resolve_fails(app, db_session, monkeypatch):
+    """Semantic save rolls back if related ticket auto-resolution fails."""
+    from fastapi.testclient import TestClient
+
+    _ = db_session
+    client = TestClient(app, raise_server_exceptions=False)
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="\u8bed\u4e49\u56de\u6eda\u6d4b\u8bd5\u6570\u636e\u6e90",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        table = TableMetadata(
+            datasource_id=ds.id,
+            schema_name="DWD",
+            table_name="CONTRACT",
+            table_type="TABLE",
+        )
+        db.add(table)
+        db.flush()
+        column = ColumnMetadata(
+            table_id=table.id,
+            column_name="PAY_STATUS",
+            column_type="VARCHAR2(20)",
+            nullable=True,
+            comment="\u652f\u4ed8\u72b6\u6001",
+            column_id=3,
+        )
+        db.add(column)
+        db.add(
+            GovernanceTicket(
+                ticket_type="missing_semantic",
+                title="\u5b57\u6bb5\u8bed\u4e49\u7f3a\u5931: DWD.CONTRACT.PAY_STATUS",
+                description="\u5b57\u6bb5 PAY_STATUS \u7f3a\u5c11\u4e1a\u52a1\u542b\u4e49\u89e3\u91ca",
+                source="auto_detect",
+                related_object_type="column",
+                related_object_id=column.id,
+                priority="medium",
+                status="open",
+            )
+        )
+        db.commit()
+
+        def fail_auto_resolve(*args, **kwargs):
+            raise RuntimeError("auto resolve failed")
+
+        monkeypatch.setattr("app.api.field_semantics.auto_resolve_ticket_on_semantic", fail_auto_resolve)
+
+        resp = client.put(
+            f"/api/field-semantics/columns/{column.id}",
+            params={
+                "business_alias": "\u652f\u4ed8\u72b6\u6001",
+                "meaning": "\u8868\u793a\u5408\u540c\u652f\u4ed8\u5904\u7406\u72b6\u6001",
+            },
+        )
+
+        assert resp.status_code == 500
+        db.expire_all()
+        assert db.query(FieldSemantic).filter(FieldSemantic.column_id == column.id).first() is None
     finally:
         db.close()
 
