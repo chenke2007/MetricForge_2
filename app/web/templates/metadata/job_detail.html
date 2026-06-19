@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}采集任务详情{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-clock-history me-2"></i>采集任务详情 #{{ job.id }}</h4>
+        <a href="/web/metadata/jobs" class="text-decoration-none small">&larr; 返回采集任务中心</a>
+    </div>
+    <span class="badge bg-{{ 'success' if job.status == 'success' else 'warning' if job.status == 'partial_success' else 'danger' if job.status == 'failed' else 'secondary' }}">{{ job.status }}</span>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">任务信息</span></div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">数据源</dt>
+                    <dd class="col-sm-9">{{ job.datasource.name if job.datasource else '数据源 #' ~ job.datasource_id }}</dd>
+                    <dt class="col-sm-3">状态</dt>
+                    <dd class="col-sm-9">{{ job.status }}</dd>
+                    <dt class="col-sm-3">触发人</dt>
+                    <dd class="col-sm-9">{{ job.triggered_by or '-' }}</dd>
+                    <dt class="col-sm-3">Schema 范围</dt>
+                    <dd class="col-sm-9">{{ job.schema_filter or '全部' }}</dd>
+                    <dt class="col-sm-3">开始时间</dt>
+                    <dd class="col-sm-9">{{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') if job.started_at else '-' }}</dd>
+                    <dt class="col-sm-3">结束时间</dt>
+                    <dd class="col-sm-9">{{ job.finished_at.strftime('%Y-%m-%d %H:%M:%S') if job.finished_at else '-' }}</dd>
+                    <dt class="col-sm-3">耗时</dt>
+                    <dd class="col-sm-9">{{ (job.duration_ms ~ ' ms') if job.duration_ms is not none else '-' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white"><span class="fw-bold">采集统计</span></div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 mb-3">
+                        <div class="stat-number">{{ job.tables_count }}</div>
+                        <div class="stat-label">表</div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="stat-number">{{ job.columns_count }}</div>
+                        <div class="stat-label">字段</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="stat-number">{{ job.indexes_count }}</div>
+                        <div class="stat-label">索引</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="stat-number">{{ job.constraints_count }}</div>
+                        <div class="stat-label">约束</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-header bg-white"><span class="fw-bold">错误信息</span></div>
+    <div class="card-body">
+        <p class="mb-2"><strong>摘要：</strong>{{ job.error_message or '-' }}</p>
+        {% if job.error_details %}
+        <pre class="bg-light border rounded p-3 small mb-0">{{ job.error_details }}</pre>
+        {% else %}
+        <p class="text-muted small mb-0">无错误明细</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

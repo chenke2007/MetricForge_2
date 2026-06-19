@@ -111,6 +111,52 @@ def datasource_detail(request: Request, ds_id: int):
         db.close()
 
 
+@router.get("/metadata/jobs", response_class=HTMLResponse)
+def metadata_jobs(request: Request, datasource_id: int = None, status: str = None):
+    """元数据采集任务中心"""
+    db = get_session()
+    try:
+        q = db.query(MetadataCollectionJob).options(joinedload(MetadataCollectionJob.datasource))
+        if datasource_id:
+            q = q.filter(MetadataCollectionJob.datasource_id == datasource_id)
+        if status:
+            q = q.filter(MetadataCollectionJob.status == status)
+        jobs = q.order_by(MetadataCollectionJob.started_at.desc()).limit(100).all()
+        datasources = db.query(DatasourceConfig).order_by(DatasourceConfig.name).all()
+        return templates.TemplateResponse(
+            request,
+            "metadata/jobs.html",
+            {
+                "request": request,
+                "jobs": jobs,
+                "datasources": datasources,
+                "current_datasource_id": datasource_id,
+                "current_status": status,
+            },
+        )
+    finally:
+        db.close()
+
+
+@router.get("/metadata/jobs/{job_id}", response_class=HTMLResponse)
+def metadata_job_detail(request: Request, job_id: int):
+    """元数据采集任务详情"""
+    db = get_session()
+    try:
+        job = (
+            db.query(MetadataCollectionJob)
+            .options(joinedload(MetadataCollectionJob.datasource))
+            .filter(MetadataCollectionJob.id == job_id)
+            .first()
+        )
+        if not job:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/web/metadata/jobs")
+        return templates.TemplateResponse(request, "metadata/job_detail.html", {"request": request, "job": job})
+    finally:
+        db.close()
+
+
 @router.get("/metadata", response_class=HTMLResponse)
 def metadata_browse(
     request: Request,

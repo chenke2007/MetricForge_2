@@ -1083,3 +1083,84 @@ def test_datasource_detail_shows_collection_jobs(client):
     assert "text-danger" in resp.text
     assert "\u91c7\u96c6\u5931\u8d25" in resp.text
     assert resp.text.count("window.setTimeout(() => window.location.reload(), 1200);") == 2
+
+
+def test_metadata_jobs_page_lists_collection_jobs(client):
+    """测试采集任务中心展示任务列表"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "任务中心数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="partial_success",
+            triggered_by="pytest",
+            tables_count=7,
+            columns_count=30,
+            error_message="1 个采集错误",
+            error_details="BAD_SCHEMA: 权限不足",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get("/web/metadata/jobs")
+
+    assert resp.status_code == 200
+    assert "采集任务中心" in resp.text
+    assert "任务中心数据源" in resp.text
+    assert "partial_success" in resp.text
+    assert "1 个采集错误" in resp.text
+    assert f"/web/metadata/jobs/{job_id}" in resp.text
+
+
+def test_metadata_job_detail_page_shows_error_details(client):
+    """测试采集任务详情页展示错误明细"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "任务详情数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="failed",
+            triggered_by="pytest",
+            tables_count=0,
+            columns_count=0,
+            error_message="连接失败",
+            error_details="DPY-6005: cannot connect",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "采集任务详情" in resp.text
+    assert "任务详情数据源" in resp.text
+    assert "连接失败" in resp.text
+    assert "DPY-6005" in resp.text
