@@ -769,3 +769,131 @@ def test_field_semantics_page_tolerates_orphan_semantic(client, db_session):
         assert "\u5b64\u513f\u8bed\u4e49" in resp.text
     finally:
         db.close()
+
+
+def test_run_metadata_collection_job_records_success(app, monkeypatch):
+    """Metadata collection jobs record success state and stats."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service success datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+
+        def fake_collect_metadata(datasource_id):
+            assert datasource_id == ds.id
+            return {
+                "success": True,
+                "stats": {
+                    "schemas": 1,
+                    "tables": 2,
+                    "columns": 8,
+                    "indexes": 3,
+                    "constraints": 4,
+                    "errors": [],
+                },
+            }
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+        job = metadata_job_service.run_metadata_collection_job(ds.id, triggered_by="pytest")
+
+        assert job["status"] == "success"
+        assert job["datasource_id"] == ds.id
+        assert job["tables_count"] == 2
+        assert job["columns_count"] == 8
+        assert job["indexes_count"] == 3
+        assert job["constraints_count"] == 4
+        assert job["duration_ms"] is not None
+
+        saved = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job["id"]).one()
+        assert saved.status == "success"
+        assert saved.error_message is None
+    finally:
+        db.close()
+
+
+def test_run_metadata_collection_job_records_partial_success(app, monkeypatch):
+    """Metadata collection jobs record partial success when schema errors return."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service partial datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+
+        monkeypatch.setattr(
+            metadata_job_service,
+            "collect_metadata",
+            lambda datasource_id: {
+                "success": True,
+                "stats": {
+                    "schemas": 2,
+                    "tables": 1,
+                    "columns": 3,
+                    "indexes": 0,
+                    "constraints": 0,
+                    "errors": ["BAD_SCHEMA: \u6743\u9650\u4e0d\u8db3"],
+                },
+            },
+        )
+
+        job = metadata_job_service.run_metadata_collection_job(ds.id)
+
+        assert job["status"] == "partial_success"
+        assert job["tables_count"] == 1
+        assert job["error_message"] == "1 \u4e2a\u91c7\u96c6\u9519\u8bef"
+        assert "BAD_SCHEMA" in job["error_details"]
+    finally:
+        db.close()
+
+
+def test_run_metadata_collection_job_records_failure(app, monkeypatch):
+    """Metadata collection jobs record failed collection results."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service failure datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+
+        monkeypatch.setattr(
+            metadata_job_service,
+            "collect_metadata",
+            lambda datasource_id: {"success": False, "error": "\u8fde\u63a5\u5931\u8d25"},
+        )
+
+        job = metadata_job_service.run_metadata_collection_job(ds.id)
+
+        assert job["status"] == "failed"
+        assert job["error_message"] == "\u8fde\u63a5\u5931\u8d25"
+        assert job["tables_count"] == 0
+    finally:
+        db.close()
