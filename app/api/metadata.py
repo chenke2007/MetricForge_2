@@ -2,10 +2,12 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..services.metadata_job_service import (
+    create_metadata_collection_job,
+    execute_metadata_collection_job,
     run_metadata_collection_job,
     serialize_collection_job,
 )
@@ -162,10 +164,12 @@ def trigger_collection(
 
 
 @router.post("/jobs/{datasource_id}")
-def create_collection_job(datasource_id: int):
-    """创建并同步执行元数据采集任务"""
+def create_collection_job(datasource_id: int, background_tasks: BackgroundTasks):
+    """创建元数据采集任务并在后台执行"""
     try:
-        return run_metadata_collection_job(datasource_id)
+        job = create_metadata_collection_job(datasource_id)
+        background_tasks.add_task(execute_metadata_collection_job, job["id"])
+        return job
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

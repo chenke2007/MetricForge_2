@@ -1046,8 +1046,59 @@ def test_run_metadata_collection_job_records_failure(app, monkeypatch):
         db.close()
 
 
+def test_create_metadata_collection_job_api_returns_running_and_schedules_background(client, monkeypatch):
+    """测试新任务 API 创建 running 任务并注册后台执行"""
+    from app.api import metadata as metadata_api
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "异步 API 数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    scheduled = []
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        return {
+            "id": 123,
+            "datasource_id": datasource_id,
+            "datasource_name": "异步 API 数据源",
+            "status": "running",
+            "tables_count": 0,
+            "columns_count": 0,
+            "indexes_count": 0,
+            "constraints_count": 0,
+            "duration_ms": None,
+            "error_message": None,
+            "error_details": None,
+            "started_at": "2026-06-19 16:10:00",
+            "finished_at": None,
+            "triggered_by": triggered_by,
+            "schema_filter": None,
+        }
+
+    class FakeBackgroundTasks:
+        def add_task(self, func, *args, **kwargs):
+            scheduled.append((func, args, kwargs))
+
+    monkeypatch.setattr(metadata_api, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    resp = metadata_api.create_collection_job(ds_id, background_tasks=FakeBackgroundTasks())
+
+    assert resp["id"] == 123
+    assert resp["status"] == "running"
+    assert len(scheduled) == 1
+    assert scheduled[0][0] == metadata_api.execute_metadata_collection_job
+    assert scheduled[0][1] == (123,)
+
+
 def test_create_metadata_collection_job_api(client, monkeypatch):
-    """测试通过 API 创建并执行采集任务"""
+    """测试通过 API 创建采集任务并后台执行"""
     from app.api import metadata as metadata_api
 
     create_resp = client.post(
@@ -1062,35 +1113,36 @@ def test_create_metadata_collection_job_api(client, monkeypatch):
     )
     ds_id = create_resp.json()["id"]
 
-    def fake_run_metadata_collection_job(datasource_id, triggered_by="web"):
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
         return {
             "id": 99,
             "datasource_id": datasource_id,
             "datasource_name": "API 采集任务数据源",
-            "status": "success",
-            "tables_count": 2,
-            "columns_count": 6,
-            "indexes_count": 1,
-            "constraints_count": 1,
-            "duration_ms": 120,
+            "status": "running",
+            "tables_count": 0,
+            "columns_count": 0,
+            "indexes_count": 0,
+            "constraints_count": 0,
+            "duration_ms": None,
             "error_message": None,
             "error_details": None,
             "started_at": "2026-06-19 10:00:00",
-            "finished_at": "2026-06-19 10:00:01",
+            "finished_at": None,
             "triggered_by": triggered_by,
             "schema_filter": None,
         }
 
-    monkeypatch.setattr(metadata_api, "run_metadata_collection_job", fake_run_metadata_collection_job)
+    monkeypatch.setattr(metadata_api, "create_metadata_collection_job", fake_create_metadata_collection_job)
+    monkeypatch.setattr(metadata_api, "execute_metadata_collection_job", lambda job_id: None)
 
     resp = client.post(f"/api/metadata/jobs/{ds_id}")
 
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == 99
-    assert data["status"] == "success"
-    assert data["tables_count"] == 2
-    assert data["columns_count"] == 6
+    assert data["status"] == "running"
+    assert data["tables_count"] == 0
+    assert data["columns_count"] == 0
 
 
 def test_list_and_get_metadata_collection_jobs_api(client):
@@ -1177,8 +1229,51 @@ def test_legacy_metadata_collect_api_uses_job_service(client, monkeypatch):
     data = resp.json()
     assert data["message"] == "元数据采集完成"
     assert data["job"]["id"] == 101
+    assert data["job"]["status"] == "success"
     assert data["stats"]["tables"] == 3
     assert data["stats"]["columns"] == 9
+
+
+def test_legacy_metadata_collect_api_still_uses_synchronous_job_service(client, monkeypatch):
+    """测试旧采集接口仍等待同步任务完成"""
+    from app.api import metadata as metadata_api
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "异步后旧接口数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        metadata_api,
+        "run_metadata_collection_job",
+        lambda datasource_id, triggered_by="web": {
+            "id": 102,
+            "datasource_id": datasource_id,
+            "status": "success",
+            "tables_count": 5,
+            "columns_count": 12,
+            "indexes_count": 1,
+            "constraints_count": 2,
+            "duration_ms": 80,
+            "error_message": None,
+            "error_details": None,
+        },
+    )
+
+    resp = client.post(f"/api/metadata/collect/{ds_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "元数据采集完成"
+    assert data["job"]["status"] == "success"
+    assert data["stats"]["tables"] == 5
 
 
 def test_datasource_detail_shows_collection_jobs(client):
