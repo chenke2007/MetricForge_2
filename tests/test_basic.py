@@ -1110,9 +1110,30 @@ def test_metadata_jobs_page_lists_collection_jobs(client):
             error_details="BAD_SCHEMA: 权限不足",
         )
         db.add(job)
+        other_ds = DatasourceConfig(
+            name="任务中心其他数据源",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(other_ds)
+        db.flush()
+        other_job = MetadataCollectionJob(
+            datasource_id=other_ds.id,
+            status="failed",
+            triggered_by="pytest",
+            tables_count=0,
+            columns_count=0,
+            error_message="连接失败",
+        )
+        db.add(other_job)
         db.commit()
         db.refresh(job)
         job_id = job.id
+        db.refresh(other_job)
+        other_job_id = other_job.id
     finally:
         db.close()
 
@@ -1123,6 +1144,51 @@ def test_metadata_jobs_page_lists_collection_jobs(client):
     assert "任务中心数据源" in resp.text
     assert "partial_success" in resp.text
     assert "1 个采集错误" in resp.text
+    assert f"/web/metadata/jobs/{job_id}" in resp.text
+
+    filtered_resp = client.get(f"/web/metadata/jobs?datasource_id={ds_id}&status=partial_success")
+    assert filtered_resp.status_code == 200
+    assert "任务中心数据源" in filtered_resp.text
+    assert "partial_success" in filtered_resp.text
+    assert f"/web/metadata/jobs/{other_job_id}" not in filtered_resp.text
+    assert "连接失败" not in filtered_resp.text
+
+
+def test_metadata_jobs_page_all_filters_accept_empty_values(client):
+    """测试采集任务中心接受表单提交的空筛选值"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "全部筛选数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            tables_count=3,
+            columns_count=12,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get("/web/metadata/jobs?datasource_id=&status=")
+
+    assert resp.status_code == 200
+    assert "采集任务中心" in resp.text
+    assert "全部筛选数据源" in resp.text
+    assert "success" in resp.text
     assert f"/web/metadata/jobs/{job_id}" in resp.text
 
 

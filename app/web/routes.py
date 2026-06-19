@@ -112,15 +112,23 @@ def datasource_detail(request: Request, ds_id: int):
 
 
 @router.get("/metadata/jobs", response_class=HTMLResponse)
-def metadata_jobs(request: Request, datasource_id: int = None, status: str = None):
+def metadata_jobs(request: Request, datasource_id: str = None, status: str = None):
     """元数据采集任务中心"""
+    datasource_id_value = None
+    if datasource_id is not None:
+        datasource_id = datasource_id.strip()
+        if datasource_id:
+            datasource_id_value = int(datasource_id)
+
+    status_value = status.strip() if status else None
+
     db = get_session()
     try:
         q = db.query(MetadataCollectionJob).options(joinedload(MetadataCollectionJob.datasource))
-        if datasource_id:
-            q = q.filter(MetadataCollectionJob.datasource_id == datasource_id)
-        if status:
-            q = q.filter(MetadataCollectionJob.status == status)
+        if datasource_id_value is not None:
+            q = q.filter(MetadataCollectionJob.datasource_id == datasource_id_value)
+        if status_value:
+            q = q.filter(MetadataCollectionJob.status == status_value)
         jobs = q.order_by(MetadataCollectionJob.started_at.desc()).limit(100).all()
         datasources = db.query(DatasourceConfig).order_by(DatasourceConfig.name).all()
         return templates.TemplateResponse(
@@ -130,8 +138,8 @@ def metadata_jobs(request: Request, datasource_id: int = None, status: str = Non
                 "request": request,
                 "jobs": jobs,
                 "datasources": datasources,
-                "current_datasource_id": datasource_id,
-                "current_status": status,
+                "current_datasource_id": datasource_id_value,
+                "current_status": status_value,
             },
         )
     finally:
