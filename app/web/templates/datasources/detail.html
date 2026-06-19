@@ -143,16 +143,30 @@ async function collectMetadata() {
     try {
         const resp = await fetch(collectionUrl, { method: 'POST' });
         const data = await resp.json();
-        if (resp.ok) {
+        if (!resp.ok) {
+            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 采集失败：'
+                + (data.detail || '未知错误') + '</span>';
+        } else if (data.status === 'success') {
             resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 采集完成：'
                 + (data.tables_count || 0) + ' 张表，'
                 + (data.columns_count || 0) + ' 个字段，'
                 + (data.error_message ? data.error_message : '无错误')
                 + '</span>';
             window.setTimeout(() => window.location.reload(), 1200);
-        } else {
+        } else if (data.status === 'partial_success') {
+            resultEl.innerHTML = '<span class="text-warning fw-bold"><i class="bi bi-exclamation-triangle-fill"></i> 部分成功：'
+                + (data.tables_count || 0) + ' 张表，'
+                + (data.columns_count || 0) + ' 个字段，'
+                + (data.error_message || '存在部分采集错误')
+                + '</span>';
+            window.setTimeout(() => window.location.reload(), 1200);
+        } else if (data.status === 'failed') {
             resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 采集失败：'
-                + (data.detail || '未知错误') + '</span>';
+                + (data.error_message || '未知错误') + '</span>';
+        } else {
+            resultEl.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split"></i> 采集任务'
+                + (data.status ? '状态：' + data.status : '已提交，正在处理')
+                + '</span>';
         }
     } catch (err) {
         resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';

@@ -1075,3 +1075,11 @@ def test_datasource_detail_shows_collection_jobs(client):
     assert "1 个采集错误" in resp.text
     assert f"/api/metadata/jobs/{ds_id}" in resp.text
     assert f"/api/metadata/collect/{ds_id}" not in resp.text
+    assert "data.status === 'success'" in resp.text
+    assert "data.status === 'partial_success'" in resp.text
+    assert "data.status === 'failed'" in resp.text
+    assert "text-warning" in resp.text
+    assert "\u90e8\u5206\u6210\u529f" in resp.text
+    assert "text-danger" in resp.text
+    assert "\u91c7\u96c6\u5931\u8d25" in resp.text
+    assert resp.text.count("window.setTimeout(() => window.location.reload(), 1200);") == 2
