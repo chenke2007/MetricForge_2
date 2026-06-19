@@ -9,6 +9,7 @@ from app.models import (
     MetricDefinition,
     MetricCaliber,
     GovernanceTicket,
+    MetadataCollectionJob,
     TableMetadata,
     ColumnMetadata,
     FieldSemantic,
@@ -98,6 +99,38 @@ def test_create_governance_ticket(db_session):
     assert saved.status == "open"
 
 
+def test_create_metadata_collection_job(db_session):
+    """测试创建元数据采集任务记录"""
+    ds = DatasourceConfig(
+        name="采集任务数据源",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.flush()
+
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="running",
+        triggered_by="web",
+        schema_filter="DWD,DWS",
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    saved = db_session.query(MetadataCollectionJob).first()
+    assert saved is not None
+    assert saved.datasource_id == ds.id
+    assert saved.status == "running"
+    assert saved.triggered_by == "web"
+    assert saved.schema_filter == "DWD,DWS"
+    assert saved.tables_count == 0
+    assert saved.columns_count == 0
+
+
 def test_create_app_uses_explicit_database_url(tmp_path):
     """测试 create_app 使用显式传入的数据库 URL 初始化数据库"""
     from app.main import create_app
@@ -111,6 +144,7 @@ def test_create_app_uses_explicit_database_url(tmp_path):
     table_names = inspect(get_engine()).get_table_names()
     assert "datasource_config" in table_names
     assert "metric_definition" in table_names
+    assert "metadata_collection_job" in table_names
 
 
 def test_resolve_database_url_falls_back_when_config_is_invalid(tmp_path, monkeypatch):
