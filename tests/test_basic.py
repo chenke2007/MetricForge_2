@@ -1327,6 +1327,35 @@ def test_datasource_detail_shows_collection_jobs(client):
     assert resp.text.count("window.setTimeout(() => window.location.reload(), 1200);") == 2
 
 
+def test_datasource_detail_uses_safe_polling_collection_ui(client):
+    """Datasource detail page polls collection jobs and renders backend text safely."""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "安全轮询数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    resp = client.get(f"/web/datasources/{ds_id}")
+
+    assert resp.status_code == 200
+    assert "pollCollectionJob" in resp.text
+    assert "setStatusMessage" in resp.text
+    assert "MAX_COLLECTION_POLLS" in resp.text
+    assert "POLL_INTERVAL_MS" in resp.text
+    assert "fetch('/api/metadata/jobs/' + jobId)" in resp.text
+    assert "data.status === 'running'" in resp.text
+    assert "任务仍在执行，可前往任务中心查看" in resp.text
+    assert "+ (data.error_message" not in resp.text
+    assert "+ (data.detail" not in resp.text
+    assert "+ (data.message" not in resp.text
+
+
 def test_metadata_jobs_page_lists_collection_jobs(client):
     """测试采集任务中心展示任务列表"""
     create_resp = client.post(

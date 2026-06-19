@@ -129,7 +129,144 @@
 
 {% block scripts %}
 <script>
+const POLL_INTERVAL_MS = 2000;
+const MAX_COLLECTION_POLLS = 150;
+
 document.getElementById('collectMetadataBtn')?.addEventListener('click', collectMetadata);
+
+function setStatusMessage(target, tone, iconClass, textParts, linkHref) {
+    target.replaceChildren();
+
+    const span = document.createElement('span');
+    span.className = tone;
+
+    const icon = document.createElement('i');
+    icon.className = iconClass;
+    span.appendChild(icon);
+    span.appendChild(document.createTextNode(' '));
+
+    textParts.forEach((part) => {
+        span.appendChild(document.createTextNode(String(part)));
+    });
+
+    if (linkHref) {
+        span.appendChild(document.createTextNode(' '));
+        const link = document.createElement('a');
+        link.href = linkHref;
+        link.className = 'ms-1';
+        link.textContent = '查看任务';
+        span.appendChild(link);
+    }
+
+    target.appendChild(span);
+}
+
+function formatJobSummary(data) {
+    return [
+        data.tables_count || 0,
+        ' 张表，',
+        data.columns_count || 0,
+        ' 个字段',
+    ];
+}
+
+function resetCollectionButton(btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-download"></i> 采集元数据';
+}
+
+function showCollectionFinalState(resultEl, data) {
+    if (data.status === 'success') {
+        setStatusMessage(
+            resultEl,
+            'text-success fw-bold',
+            'bi bi-check-circle-fill',
+            ['采集完成：', ...formatJobSummary(data), '，', data.error_message || '无错误'],
+            '/web/metadata/jobs/' + data.id
+        );
+        window.setTimeout(() => window.location.reload(), 1200);
+        return true;
+    }
+
+    if (data.status === 'partial_success') {
+        setStatusMessage(
+            resultEl,
+            'text-warning fw-bold',
+            'bi bi-exclamation-triangle-fill',
+            ['部分成功：', ...formatJobSummary(data), '，', data.error_message || '存在部分采集错误'],
+            '/web/metadata/jobs/' + data.id
+        );
+        window.setTimeout(() => window.location.reload(), 1200);
+        return true;
+    }
+
+    if (data.status === 'failed') {
+        setStatusMessage(
+            resultEl,
+            'text-danger',
+            'bi bi-x-circle-fill',
+            ['采集失败：', data.error_message || '未知错误'],
+            '/web/metadata/jobs/' + data.id
+        );
+        return true;
+    }
+
+    return false;
+}
+
+async function pollCollectionJob(jobId, resultEl, btn, pollCount = 0) {
+    if (pollCount >= MAX_COLLECTION_POLLS) {
+        setStatusMessage(
+            resultEl,
+            'text-muted',
+            'bi bi-hourglass-split',
+            ['任务仍在执行，可前往任务中心查看'],
+            '/web/metadata/jobs/' + jobId
+        );
+        resetCollectionButton(btn);
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/metadata/jobs/' + jobId);
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            setStatusMessage(
+                resultEl,
+                'text-danger',
+                'bi bi-x-circle-fill',
+                ['查询任务失败：', data.detail || '未知错误'],
+                '/web/metadata/jobs/' + jobId
+            );
+            resetCollectionButton(btn);
+            return;
+        }
+
+        if (showCollectionFinalState(resultEl, data)) {
+            resetCollectionButton(btn);
+            return;
+        }
+
+        setStatusMessage(
+            resultEl,
+            'text-muted',
+            'bi bi-hourglass-split',
+            ['采集任务正在后台执行...'],
+            '/web/metadata/jobs/' + jobId
+        );
+        window.setTimeout(() => pollCollectionJob(jobId, resultEl, btn, pollCount + 1), POLL_INTERVAL_MS);
+    } catch (err) {
+        setStatusMessage(
+            resultEl,
+            'text-danger',
+            'bi bi-x-circle-fill',
+            ['请求失败: ', err.message],
+            '/web/metadata/jobs/' + jobId
+        );
+        resetCollectionButton(btn);
+    }
+}
 
 async function collectMetadata() {
     const btn = document.getElementById('collectMetadataBtn');
@@ -137,42 +274,44 @@ async function collectMetadata() {
     const collectionUrl = btn.dataset.collectionUrl;
 
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 采集中...';
-    resultEl.innerHTML = '';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 创建任务中...';
+    resultEl.replaceChildren();
 
     try {
         const resp = await fetch(collectionUrl, { method: 'POST' });
         const data = await resp.json();
         if (!resp.ok) {
-            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 采集失败：'
-                + (data.detail || '未知错误') + '</span>';
-        } else if (data.status === 'success') {
-            resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 采集完成：'
-                + (data.tables_count || 0) + ' 张表，'
-                + (data.columns_count || 0) + ' 个字段，'
-                + (data.error_message ? data.error_message : '无错误')
-                + '</span>';
-            window.setTimeout(() => window.location.reload(), 1200);
-        } else if (data.status === 'partial_success') {
-            resultEl.innerHTML = '<span class="text-warning fw-bold"><i class="bi bi-exclamation-triangle-fill"></i> 部分成功：'
-                + (data.tables_count || 0) + ' 张表，'
-                + (data.columns_count || 0) + ' 个字段，'
-                + (data.error_message || '存在部分采集错误')
-                + '</span>';
-            window.setTimeout(() => window.location.reload(), 1200);
-        } else if (data.status === 'failed') {
-            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 采集失败：'
-                + (data.error_message || '未知错误') + '</span>';
-        } else {
-            resultEl.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split"></i> 采集任务'
-                + (data.status ? '状态：' + data.status : '已提交，正在处理')
-                + '</span>';
+            setStatusMessage(resultEl, 'text-danger', 'bi bi-x-circle-fill', ['采集失败：', data.detail || '未知错误']);
+            resetCollectionButton(btn);
+            return;
+        }
+
+        if (data.status === 'running') {
+            setStatusMessage(
+                resultEl,
+                'text-muted',
+                'bi bi-hourglass-split',
+                ['采集任务已创建，正在后台执行...'],
+                '/web/metadata/jobs/' + data.id
+            );
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 采集中...';
+            window.setTimeout(() => pollCollectionJob(data.id, resultEl, btn), POLL_INTERVAL_MS);
+            return;
+        }
+
+        if (!showCollectionFinalState(resultEl, data)) {
+            setStatusMessage(
+                resultEl,
+                'text-muted',
+                'bi bi-hourglass-split',
+                ['采集任务状态：', data.status || '未知'],
+                '/web/metadata/jobs/' + data.id
+            );
+            resetCollectionButton(btn);
         }
     } catch (err) {
-        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 采集元数据';
+        setStatusMessage(resultEl, 'text-danger', 'bi bi-x-circle-fill', ['请求失败: ', err.message]);
+        resetCollectionButton(btn);
     }
 }
 
@@ -183,18 +322,18 @@ document.getElementById('testConnBtn')?.addEventListener('click', async function
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 测试中...';
-    resultEl.innerHTML = '';
+    resultEl.replaceChildren();
 
     try {
         const resp = await fetch('/api/datasources/' + dsId + '/test-connection', { method: 'POST' });
         const data = await resp.json();
         if (data.success) {
-            resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 连接成功</span>';
+            setStatusMessage(resultEl, 'text-success fw-bold', 'bi bi-check-circle-fill', ['连接成功']);
         } else {
-            resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' + (data.message || '连接失败') + '</span>';
+            setStatusMessage(resultEl, 'text-danger', 'bi bi-x-circle-fill', [data.message || '连接失败']);
         }
     } catch (err) {
-        resultEl.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> 请求失败: ' + err.message + '</span>';
+        setStatusMessage(resultEl, 'text-danger', 'bi bi-x-circle-fill', ['请求失败: ', err.message]);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-plug"></i> 测试连接';
