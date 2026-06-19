@@ -117,7 +117,7 @@ def metadata_jobs(request: Request, datasource_id: str = None, status: str = Non
     datasource_id_value = None
     if datasource_id is not None:
         datasource_id = datasource_id.strip()
-        if datasource_id:
+        if datasource_id.isdigit():
             datasource_id_value = int(datasource_id)
 
     status_value = status.strip() if status else None

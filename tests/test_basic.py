@@ -1192,6 +1192,44 @@ def test_metadata_jobs_page_all_filters_accept_empty_values(client):
     assert f"/web/metadata/jobs/{job_id}" in resp.text
 
 
+def test_metadata_jobs_page_ignores_invalid_datasource_filter(client):
+    """测试采集任务中心忽略非法数据源筛选值"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "非法筛选数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="partial_success",
+            triggered_by="pytest",
+            tables_count=4,
+            columns_count=16,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get("/web/metadata/jobs?datasource_id=abc&status=partial_success")
+
+    assert resp.status_code == 200
+    assert "采集任务中心" in resp.text
+    assert "非法筛选数据源" in resp.text
+    assert "partial_success" in resp.text
+    assert f"/web/metadata/jobs/{job_id}" in resp.text
+
+
 def test_metadata_job_detail_page_shows_error_details(client):
     """测试采集任务详情页展示错误明细"""
     create_resp = client.post(
