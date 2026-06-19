@@ -771,6 +771,153 @@ def test_field_semantics_page_tolerates_orphan_semantic(client, db_session):
         db.close()
 
 
+def test_create_metadata_collection_job_records_running_without_collecting(app, monkeypatch):
+    """Creating a metadata collection job only records a running task."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service create datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="DWD,DWS",
+        )
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+
+        def fail_collect_metadata(datasource_id):
+            raise AssertionError("create should not collect metadata")
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fail_collect_metadata)
+
+        job = metadata_job_service.create_metadata_collection_job(ds.id, triggered_by="pytest")
+
+        assert job["status"] == "running"
+        assert job["datasource_id"] == ds.id
+        assert job["triggered_by"] == "pytest"
+        assert job["schema_filter"] == "DWD,DWS"
+        assert job["finished_at"] is None
+        assert job["duration_ms"] is None
+        assert job["tables_count"] == 0
+        assert job["columns_count"] == 0
+        assert job["indexes_count"] == 0
+        assert job["constraints_count"] == 0
+
+        saved = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job["id"]).one()
+        assert saved.status == "running"
+    finally:
+        db.close()
+
+
+def test_execute_metadata_collection_job_updates_running_job_to_success(app, monkeypatch):
+    """Executing a running metadata collection job records success stats."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service execute datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        job_record = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="running",
+            triggered_by="pytest",
+            schema_filter=ds.schema_names,
+        )
+        db.add(job_record)
+        db.commit()
+        db.refresh(ds)
+        db.refresh(job_record)
+
+        def fake_collect_metadata(datasource_id):
+            assert datasource_id == ds.id
+            return {
+                "success": True,
+                "stats": {
+                    "schemas": 1,
+                    "tables": 3,
+                    "columns": 12,
+                    "indexes": 2,
+                    "constraints": 5,
+                    "errors": [],
+                },
+            }
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+        job = metadata_job_service.execute_metadata_collection_job(job_record.id)
+
+        assert job["status"] == "success"
+        assert job["tables_count"] == 3
+        assert job["columns_count"] == 12
+        assert job["indexes_count"] == 2
+        assert job["constraints_count"] == 5
+        assert job["finished_at"] is not None
+        assert job["duration_ms"] is not None
+
+        db.expire_all()
+        saved = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job_record.id).one()
+        assert saved.status == "success"
+        assert saved.finished_at is not None
+        assert saved.duration_ms is not None
+    finally:
+        db.close()
+
+
+def test_execute_metadata_collection_job_records_failure_when_datasource_missing(app):
+    """Executing a job fails when the datasource was deleted."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service missing datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        job_record = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="running",
+            triggered_by="pytest",
+        )
+        db.add(job_record)
+        db.commit()
+        job_id = job_record.id
+        db.delete(ds)
+        db.commit()
+
+        job = metadata_job_service.execute_metadata_collection_job(job_id)
+
+        assert job["status"] == "failed"
+        assert "数据源不存在" in job["error_message"]
+    finally:
+        db.close()
+
+
+def test_execute_metadata_collection_job_returns_none_for_missing_job(app):
+    """Executing a missing metadata collection job returns None."""
+    from app.services import metadata_job_service
+
+    assert metadata_job_service.execute_metadata_collection_job(999999) is None
+
+
 def test_run_metadata_collection_job_records_success(app, monkeypatch):
     """Metadata collection jobs record success state and stats."""
     from app.services import metadata_job_service

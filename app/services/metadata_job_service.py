@@ -1,9 +1,12 @@
 """Metadata collection job service."""
 
+import logging
 from datetime import UTC, datetime
 
 from ..models import DatasourceConfig, MetadataCollectionJob, get_session
 from .metadata_service import collect_metadata
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_collection_job(job: MetadataCollectionJob) -> dict:
@@ -35,8 +38,16 @@ def _utc_now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def run_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -> dict:
-    """Create and synchronously run a metadata collection job."""
+def _mark_job_failed(job: MetadataCollectionJob, message: str, finished_at: datetime | None = None) -> None:
+    finished_at = finished_at or _utc_now()
+    job.finished_at = finished_at
+    job.duration_ms = _duration_ms(job.started_at, finished_at)
+    job.status = "failed"
+    job.error_message = message
+
+
+def create_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -> dict:
+    """Create a running metadata collection job without executing collection."""
     db = get_session()
     try:
         ds = db.query(DatasourceConfig).filter(DatasourceConfig.id == datasource_id).first()
@@ -53,9 +64,28 @@ def run_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -
         db.add(job)
         db.commit()
         db.refresh(job)
+        return serialize_collection_job(job)
+    finally:
+        db.close()
+
+
+def execute_metadata_collection_job(job_id: int) -> dict | None:
+    """Execute a running metadata collection job and update it to a terminal state."""
+    db = get_session()
+    try:
+        job = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job_id).first()
+        if not job:
+            return None
+
+        ds = db.query(DatasourceConfig).filter(DatasourceConfig.id == job.datasource_id).first()
+        if not ds:
+            _mark_job_failed(job, "\u6570\u636e\u6e90\u4e0d\u5b58\u5728")
+            db.commit()
+            db.refresh(job)
+            return serialize_collection_job(job)
 
         try:
-            result = collect_metadata(datasource_id)
+            result = collect_metadata(job.datasource_id)
             finished_at = _utc_now()
             stats = result.get("stats") or {}
             errors = stats.get("errors") or []
@@ -78,14 +108,20 @@ def run_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -
                 job.status = "failed"
                 job.error_message = result.get("error", "\u91c7\u96c6\u5931\u8d25")
         except Exception as exc:
-            finished_at = _utc_now()
-            job.finished_at = finished_at
-            job.duration_ms = _duration_ms(job.started_at, finished_at)
-            job.status = "failed"
-            job.error_message = str(exc)
+            logger.exception("Metadata collection job %s failed", job_id)
+            _mark_job_failed(job, str(exc))
 
         db.commit()
         db.refresh(job)
         return serialize_collection_job(job)
     finally:
         db.close()
+
+
+def run_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -> dict:
+    """Create and synchronously run a metadata collection job."""
+    job = create_metadata_collection_job(datasource_id, triggered_by=triggered_by)
+    result = execute_metadata_collection_job(job["id"])
+    if result is None:
+        raise ValueError("\u91c7\u96c6\u4efb\u52a1\u4e0d\u5b58\u5728")
+    return result
