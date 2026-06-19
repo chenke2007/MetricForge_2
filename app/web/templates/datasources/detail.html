@@ -161,6 +161,10 @@ function setStatusMessage(target, tone, iconClass, textParts, linkHref) {
     target.appendChild(span);
 }
 
+function jobDetailHref(data) {
+    return data && data.id ? `/web/metadata/jobs/${data.id}` : null;
+}
+
 function formatJobSummary(data) {
     return [
         data.tables_count || 0,
@@ -182,7 +186,7 @@ function showCollectionFinalState(resultEl, data) {
             'text-success fw-bold',
             'bi bi-check-circle-fill',
             ['采集完成：', ...formatJobSummary(data), '，', data.error_message || '无错误'],
-            '/web/metadata/jobs/' + data.id
+            jobDetailHref(data)
         );
         window.setTimeout(() => window.location.reload(), 1200);
         return true;
@@ -194,7 +198,7 @@ function showCollectionFinalState(resultEl, data) {
             'text-warning fw-bold',
             'bi bi-exclamation-triangle-fill',
             ['部分成功：', ...formatJobSummary(data), '，', data.error_message || '存在部分采集错误'],
-            '/web/metadata/jobs/' + data.id
+            jobDetailHref(data)
         );
         window.setTimeout(() => window.location.reload(), 1200);
         return true;
@@ -206,7 +210,7 @@ function showCollectionFinalState(resultEl, data) {
             'text-danger',
             'bi bi-x-circle-fill',
             ['采集失败：', data.error_message || '未知错误'],
-            '/web/metadata/jobs/' + data.id
+            jobDetailHref(data)
         );
         return true;
     }
@@ -215,6 +219,17 @@ function showCollectionFinalState(resultEl, data) {
 }
 
 async function pollCollectionJob(jobId, resultEl, btn, pollCount = 0) {
+    if (!jobId) {
+        setStatusMessage(
+            resultEl,
+            'text-warning',
+            'bi bi-exclamation-triangle-fill',
+            ['任务已创建但未返回任务 ID']
+        );
+        resetCollectionButton(btn);
+        return;
+    }
+
     if (pollCount >= MAX_COLLECTION_POLLS) {
         setStatusMessage(
             resultEl,
@@ -287,12 +302,23 @@ async function collectMetadata() {
         }
 
         if (data.status === 'running') {
+            if (!data.id) {
+                setStatusMessage(
+                    resultEl,
+                    'text-warning',
+                    'bi bi-exclamation-triangle-fill',
+                    ['任务已创建但未返回任务 ID']
+                );
+                resetCollectionButton(btn);
+                return;
+            }
+
             setStatusMessage(
                 resultEl,
                 'text-muted',
                 'bi bi-hourglass-split',
                 ['采集任务已创建，正在后台执行...'],
-                '/web/metadata/jobs/' + data.id
+                jobDetailHref(data)
             );
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 采集中...';
             window.setTimeout(() => pollCollectionJob(data.id, resultEl, btn), POLL_INTERVAL_MS);
@@ -305,7 +331,7 @@ async function collectMetadata() {
                 'text-muted',
                 'bi bi-hourglass-split',
                 ['采集任务状态：', data.status || '未知'],
-                '/web/metadata/jobs/' + data.id
+                jobDetailHref(data)
             );
             resetCollectionButton(btn);
         }

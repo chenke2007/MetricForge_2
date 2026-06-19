@@ -1349,7 +1349,11 @@ def test_datasource_detail_uses_safe_polling_collection_ui(client):
     assert "MAX_COLLECTION_POLLS" in resp.text
     assert "POLL_INTERVAL_MS" in resp.text
     assert "fetch('/api/metadata/jobs/' + jobId)" in resp.text
+    assert "function jobDetailHref(data)" in resp.text
+    assert "'/web/metadata/jobs/' + data.id" not in resp.text
+    assert "\u4efb\u52a1\u5df2\u521b\u5efa\u4f46\u672a\u8fd4\u56de\u4efb\u52a1 ID" in resp.text
     assert "data.status === 'running'" in resp.text
+    assert "if (!data.id)" in resp.text
     assert "任务仍在执行，可前往任务中心查看" in resp.text
     assert "+ (data.error_message" not in resp.text
     assert "+ (data.detail" not in resp.text
