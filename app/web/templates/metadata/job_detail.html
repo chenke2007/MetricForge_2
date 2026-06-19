@@ -10,6 +10,12 @@
     <span class="badge bg-{{ 'success' if job.status == 'success' else 'warning' if job.status == 'partial_success' else 'danger' if job.status == 'failed' else 'secondary' }}">{{ job.status }}</span>
 </div>
 
+{% if job.status == 'running' %}
+<div class="alert alert-info">
+    <i class="bi bi-hourglass-split me-2"></i>任务仍在执行，请刷新查看最新状态。
+</div>
+{% endif %}
+
 <div class="row g-3">
     <div class="col-md-7">
         <div class="card shadow-sm">

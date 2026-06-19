@@ -1505,6 +1505,44 @@ def test_metadata_jobs_page_ignores_invalid_datasource_filter(client):
     assert f"/web/metadata/jobs/{job_id}" in resp.text
 
 
+def test_metadata_job_detail_page_shows_running_hint(client):
+    """测试采集任务详情页展示运行中提示"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "运行中任务详情数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="running",
+            triggered_by="pytest",
+            tables_count=0,
+            columns_count=0,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "采集任务详情" in resp.text
+    assert "running" in resp.text
+    assert "任务仍在执行" in resp.text
+    assert "请刷新查看最新状态" in resp.text
+
+
 def test_metadata_job_detail_page_shows_error_details(client):
     """测试采集任务详情页展示错误明细"""
     create_resp = client.post(
