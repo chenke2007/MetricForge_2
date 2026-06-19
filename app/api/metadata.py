@@ -5,7 +5,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..services.metadata_service import collect_metadata
+from ..services.metadata_job_service import (
+    run_metadata_collection_job,
+    serialize_collection_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +16,7 @@ from ..models import (
     ColumnMetadata,
     ConstraintMetadata,
     IndexMetadata,
+    MetadataCollectionJob,
     TableMetadata,
     get_session,
 )
@@ -132,13 +136,64 @@ def trigger_collection(
     datasource_id: int,
     db: Session = Depends(get_db),
 ):
-    """触发元数据采集"""
+    """触发元数据采集（兼容旧接口）"""
     try:
-        result = collect_metadata(datasource_id)
-        if result.get("success"):
-            return {"message": "元数据采集完成", "stats": result["stats"]}
-        else:
-            raise HTTPException(status_code=500, detail=result.get("error", "采集失败"))
+        job = run_metadata_collection_job(datasource_id)
+        if job["status"] in ("success", "partial_success"):
+            return {
+                "message": "元数据采集完成",
+                "job": job,
+                "stats": {
+                    "tables": job["tables_count"],
+                    "columns": job["columns_count"],
+                    "indexes": job["indexes_count"],
+                    "constraints": job["constraints_count"],
+                    "errors": job["error_details"].splitlines() if job.get("error_details") else [],
+                },
+            }
+        raise HTTPException(status_code=500, detail=job.get("error_message") or "采集失败")
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.exception("元数据采集异常")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/jobs/{datasource_id}")
+def create_collection_job(datasource_id: int):
+    """创建并同步执行元数据采集任务"""
+    try:
+        return run_metadata_collection_job(datasource_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("创建采集任务异常")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/jobs")
+def list_collection_jobs(
+    datasource_id: int = Query(None, description="按数据源筛选"),
+    status: str = Query(None, description="按任务状态筛选"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """列出元数据采集任务"""
+    q = db.query(MetadataCollectionJob)
+    if datasource_id:
+        q = q.filter(MetadataCollectionJob.datasource_id == datasource_id)
+    if status:
+        q = q.filter(MetadataCollectionJob.status == status)
+    jobs = q.order_by(MetadataCollectionJob.started_at.desc()).limit(limit).all()
+    return [serialize_collection_job(job) for job in jobs]
+
+
+@router.get("/jobs/{job_id}")
+def get_collection_job(job_id: int, db: Session = Depends(get_db)):
+    """获取元数据采集任务详情"""
+    job = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="采集任务不存在")
+    return serialize_collection_job(job)

@@ -897,3 +897,138 @@ def test_run_metadata_collection_job_records_failure(app, monkeypatch):
         assert job["tables_count"] == 0
     finally:
         db.close()
+
+
+def test_create_metadata_collection_job_api(client, monkeypatch):
+    """测试通过 API 创建并执行采集任务"""
+    from app.api import metadata as metadata_api
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "API 采集任务数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    def fake_run_metadata_collection_job(datasource_id, triggered_by="web"):
+        return {
+            "id": 99,
+            "datasource_id": datasource_id,
+            "datasource_name": "API 采集任务数据源",
+            "status": "success",
+            "tables_count": 2,
+            "columns_count": 6,
+            "indexes_count": 1,
+            "constraints_count": 1,
+            "duration_ms": 120,
+            "error_message": None,
+            "error_details": None,
+            "started_at": "2026-06-19 10:00:00",
+            "finished_at": "2026-06-19 10:00:01",
+            "triggered_by": triggered_by,
+            "schema_filter": None,
+        }
+
+    monkeypatch.setattr(metadata_api, "run_metadata_collection_job", fake_run_metadata_collection_job)
+
+    resp = client.post(f"/api/metadata/jobs/{ds_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == 99
+    assert data["status"] == "success"
+    assert data["tables_count"] == 2
+    assert data["columns_count"] == 6
+
+
+def test_list_and_get_metadata_collection_jobs_api(client):
+    """测试采集任务列表和详情 API"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "任务列表数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="failed",
+            triggered_by="pytest",
+            tables_count=0,
+            columns_count=0,
+            error_message="连接失败",
+            error_details="DPY-6005",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    list_resp = client.get(f"/api/metadata/jobs?datasource_id={ds_id}")
+    assert list_resp.status_code == 200
+    jobs = list_resp.json()
+    assert len(jobs) == 1
+    assert jobs[0]["status"] == "failed"
+    assert jobs[0]["error_message"] == "连接失败"
+
+    detail_resp = client.get(f"/api/metadata/jobs/{job_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["id"] == job_id
+    assert detail["error_details"] == "DPY-6005"
+
+
+def test_legacy_metadata_collect_api_uses_job_service(client, monkeypatch):
+    """测试旧采集 API 保持兼容并走任务服务"""
+    from app.api import metadata as metadata_api
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "旧接口兼容数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        metadata_api,
+        "run_metadata_collection_job",
+        lambda datasource_id, triggered_by="web": {
+            "id": 101,
+            "datasource_id": datasource_id,
+            "status": "success",
+            "tables_count": 3,
+            "columns_count": 9,
+            "indexes_count": 0,
+            "constraints_count": 0,
+            "duration_ms": 50,
+            "error_message": None,
+            "error_details": None,
+        },
+    )
+
+    resp = client.post(f"/api/metadata/collect/{ds_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "元数据采集完成"
+    assert data["job"]["id"] == 101
+    assert data["stats"]["tables"] == 3
+    assert data["stats"]["columns"] == 9
