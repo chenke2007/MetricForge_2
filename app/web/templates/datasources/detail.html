@@ -8,7 +8,7 @@
         <a href="/web/datasources" class="text-decoration-none small">&larr; 返回列表</a>
     </div>
     <div>
-        <button id="collectMetadataBtn" class="btn btn-primary btn-sm me-2" data-ds-id="{{ ds.id }}"><i class="bi bi-cloud-download"></i> 采集元数据</button>
+        <button id="collectMetadataBtn" class="btn btn-primary btn-sm me-2" data-ds-id="{{ ds.id }}" data-collection-url="/api/metadata/jobs/{{ ds.id }}"><i class="bi bi-cloud-download"></i> 采集元数据</button>
         <button id="testConnBtn" class="btn btn-outline-info btn-sm" data-ds-id="{{ ds.id }}"><i class="bi bi-plug"></i> 测试连接</button>
         <span id="testResult" class="ms-2 small"></span>
         <div id="collectionResult" class="mt-2 small"></div>
@@ -86,6 +86,45 @@
     <i class="bi bi-info-circle me-2"></i>尚未采集元数据。配置 Oracle 连接后在元数据页面触发采集。
 </div>
 {% endif %}
+
+<div class="card shadow-sm mt-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-clock-history me-1"></i>采集历史</span>
+        <a href="/web/metadata/jobs?datasource_id={{ ds.id }}" class="btn btn-sm btn-outline-primary">查看全部</a>
+    </div>
+    <div class="card-body p-0">
+        {% if collection_jobs %}
+        <table class="table table-hover mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>状态</th>
+                    <th>开始时间</th>
+                    <th>耗时</th>
+                    <th>表</th>
+                    <th>字段</th>
+                    <th>错误</th>
+                    <th>详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in collection_jobs %}
+                <tr>
+                    <td><span class="badge bg-{{ 'success' if job.status == 'success' else 'warning' if job.status == 'partial_success' else 'danger' if job.status == 'failed' else 'secondary' }}">{{ job.status }}</span></td>
+                    <td>{{ job.started_at.strftime('%Y-%m-%d %H:%M') if job.started_at else '-' }}</td>
+                    <td>{{ (job.duration_ms ~ ' ms') if job.duration_ms is not none else '-' }}</td>
+                    <td>{{ job.tables_count }}</td>
+                    <td>{{ job.columns_count }}</td>
+                    <td class="text-muted">{{ job.error_message or '-' }}</td>
+                    <td><a href="/web/metadata/jobs/{{ job.id }}" class="btn btn-sm btn-outline-primary">查看</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-4 text-muted small">暂无采集任务</div>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -95,21 +134,20 @@ document.getElementById('collectMetadataBtn')?.addEventListener('click', collect
 async function collectMetadata() {
     const btn = document.getElementById('collectMetadataBtn');
     const resultEl = document.getElementById('collectionResult');
-    const dsId = btn.dataset.dsId;
+    const collectionUrl = btn.dataset.collectionUrl;
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 采集中...';
     resultEl.innerHTML = '';
 
     try {
-        const resp = await fetch('/api/metadata/collect/' + dsId, { method: 'POST' });
+        const resp = await fetch(collectionUrl, { method: 'POST' });
         const data = await resp.json();
         if (resp.ok) {
-            const stats = data.stats || {};
             resultEl.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 采集完成：'
-                + (stats.tables || 0) + ' 张表，'
-                + (stats.columns || 0) + ' 个字段，'
-                + (stats.errors && stats.errors.length ? stats.errors.length + ' 个错误' : '无错误')
+                + (data.tables_count || 0) + ' 张表，'
+                + (data.columns_count || 0) + ' 个字段，'
+                + (data.error_message ? data.error_message : '无错误')
                 + '</span>';
             window.setTimeout(() => window.location.reload(), 1200);
         } else {

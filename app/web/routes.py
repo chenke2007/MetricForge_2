@@ -13,6 +13,7 @@ from ..models import (
     MetricDefinition,
     GovernanceTicket,
     FieldSemantic,
+    MetadataCollectionJob,
     get_session,
 )
 
@@ -94,10 +95,17 @@ def datasource_detail(request: Request, ds_id: int):
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/web/datasources")
         tables = db.query(TableMetadata).filter(TableMetadata.datasource_id == ds_id).all()
+        collection_jobs = (
+            db.query(MetadataCollectionJob)
+            .filter(MetadataCollectionJob.datasource_id == ds_id)
+            .order_by(MetadataCollectionJob.started_at.desc())
+            .limit(5)
+            .all()
+        )
         return templates.TemplateResponse(
             request,
             "datasources/detail.html",
-            {"request": request, "ds": ds, "tables": tables},
+            {"request": request, "ds": ds, "tables": tables, "collection_jobs": collection_jobs},
         )
     finally:
         db.close()

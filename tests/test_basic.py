@@ -1032,3 +1032,46 @@ def test_legacy_metadata_collect_api_uses_job_service(client, monkeypatch):
     assert data["job"]["id"] == 101
     assert data["stats"]["tables"] == 3
     assert data["stats"]["columns"] == 9
+
+
+def test_datasource_detail_shows_collection_jobs(client):
+    """测试数据源详情页展示最近采集任务并使用任务 API 触发采集"""
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "详情采集历史数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        db.add(
+            MetadataCollectionJob(
+                datasource_id=ds_id,
+                status="partial_success",
+                triggered_by="pytest",
+                tables_count=5,
+                columns_count=21,
+                error_message="1 个采集错误",
+                error_details="BAD_SCHEMA: 权限不足",
+                duration_ms=321,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/datasources/{ds_id}")
+
+    assert resp.status_code == 200
+    assert "采集历史" in resp.text
+    assert "partial_success" in resp.text
+    assert "5" in resp.text
+    assert "21" in resp.text
+    assert "1 个采集错误" in resp.text
+    assert f"/api/metadata/jobs/{ds_id}" in resp.text
+    assert f"/api/metadata/collect/{ds_id}" not in resp.text
