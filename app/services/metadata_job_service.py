@@ -46,6 +46,13 @@ def _mark_job_failed(job: MetadataCollectionJob, message: str, finished_at: date
     job.error_message = message
 
 
+def _parse_schema_filter(schema_filter: str | None) -> list[str] | None:
+    if not schema_filter:
+        return None
+    schemas = [schema.strip().upper() for schema in schema_filter.split(",") if schema.strip()]
+    return schemas or None
+
+
 def create_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -> dict:
     """Create a running metadata collection job without executing collection."""
     db = get_session()
@@ -85,7 +92,11 @@ def execute_metadata_collection_job(job_id: int) -> dict | None:
             return serialize_collection_job(job)
 
         try:
-            result = collect_metadata(job.datasource_id)
+            schemas = _parse_schema_filter(job.schema_filter)
+            if schemas:
+                result = collect_metadata(job.datasource_id, schemas=schemas)
+            else:
+                result = collect_metadata(job.datasource_id)
             finished_at = _utc_now()
             stats = result.get("stats") or {}
             errors = stats.get("errors") or []

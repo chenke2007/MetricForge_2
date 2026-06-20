@@ -46,19 +46,18 @@ class OracleMetadataCollector(MetadataCollector):
         """采集指定 schema 下的表和视图元数据"""
         sql = """
             SELECT
-                t.table_name,
-                t.table_type,
+                c.table_name,
+                c.table_type,
                 COALESCE(c.comments, '') AS table_comment
-            FROM all_tables t
-            LEFT JOIN all_tab_comments c
-                ON t.owner = c.owner AND t.table_name = c.table_name
-            WHERE t.owner = :schema
-            ORDER BY t.table_name
+            FROM all_tab_comments c
+            WHERE c.owner = :schema
+                AND c.table_type IN ('TABLE', 'VIEW')
+            ORDER BY c.table_name
         """
         result = self.adapter.execute_query(sql, {"schema": schema})
         if result.error:
             logger.error("采集表列表失败 (schema=%s): %s", schema, result.error)
-            return []
+            raise RuntimeError(result.error)
 
         tables = []
         for row in result.rows:
@@ -96,7 +95,7 @@ class OracleMetadataCollector(MetadataCollector):
                 c.nullable,
                 c.column_id,
                 c.data_default,
-                COALESCE(cmt.comments, '') AS comment
+                COALESCE(cmt.comments, '') AS column_comment
             FROM all_tab_columns c
             LEFT JOIN all_col_comments cmt
                 ON c.owner = cmt.owner
@@ -108,7 +107,7 @@ class OracleMetadataCollector(MetadataCollector):
         result = self.adapter.execute_query(sql, {"schema": schema, "table_name": table})
         if result.error:
             logger.error("采集字段失败 (%s.%s): %s", schema, table, result.error)
-            return []
+            raise RuntimeError(result.error)
 
         # 获取主键和唯一键字段
         pk_columns = self._get_pk_columns(schema, table)

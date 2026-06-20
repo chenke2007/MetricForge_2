@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import inspect
 
 from app.models import (
@@ -918,6 +919,51 @@ def test_execute_metadata_collection_job_returns_none_for_missing_job(app):
     assert metadata_job_service.execute_metadata_collection_job(999999) is None
 
 
+def test_execute_metadata_collection_job_uses_datasource_schema_filter(app, monkeypatch):
+    """Executing a job uses datasource schema_names as uppercase collect scope."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="job service schema filter datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="dwhrpt, DWHRPT_T",
+        )
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+
+        def fake_collect_metadata(datasource_id, schemas=None):
+            assert datasource_id == ds.id
+            assert schemas == ["DWHRPT", "DWHRPT_T"]
+            return {
+                "success": True,
+                "stats": {
+                    "schemas": 2,
+                    "tables": 1,
+                    "columns": 2,
+                    "indexes": 0,
+                    "constraints": 0,
+                    "errors": [],
+                },
+            }
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+        job = metadata_job_service.run_metadata_collection_job(ds.id)
+
+        assert job["status"] == "success"
+        assert job["schema_filter"] == "dwhrpt, DWHRPT_T"
+        assert job["tables_count"] == 1
+    finally:
+        db.close()
+
+
 def test_run_metadata_collection_job_records_success(app, monkeypatch):
     """Metadata collection jobs record success state and stats."""
     from app.services import metadata_job_service
@@ -1044,6 +1090,155 @@ def test_run_metadata_collection_job_records_failure(app, monkeypatch):
         assert job["tables_count"] == 0
     finally:
         db.close()
+
+
+def test_collect_metadata_fails_when_all_requested_schemas_fail(app, monkeypatch):
+    """采集指定 schema 全部失败时不能伪装成 success."""
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    class FailingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            raise RuntimeError("ORA-00904: invalid identifier")
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", FailingCollector)
+
+    result = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    assert result["success"] is False
+    assert "DWHRPT" in result["error"]
+    assert "ORA-00904" in result["error"]
+    assert result["stats"]["errors"] == ["DWHRPT: ORA-00904: invalid identifier"]
+
+
+def test_collect_metadata_fails_when_requested_schema_column_collection_fails(app, monkeypatch):
+    """字段采集失败时 schema 会回滚，任务不应被统计成成功采集。"""
+    from app.adapters.metadata_collector import TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    class FailingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            return [TableInfo(schema_name=schema, table_name="T_ORDER")]
+
+        def collect_columns(self, schema, table):
+            raise RuntimeError("ORA-00923: FROM keyword not found")
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", FailingCollector)
+
+    result = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    assert result["success"] is False
+    assert "ORA-00923" in result["error"]
+    assert result["stats"]["schemas"] == 0
+    assert result["stats"]["tables"] == 0
+    assert result["stats"]["columns"] == 0
+
+
+def test_oracle_collect_tables_uses_valid_table_type_source():
+    """Oracle 表采集 SQL 不应引用不存在的 all_tables.table_type."""
+    from app.adapters.base import QueryResult
+    from app.collectors.oracle_collector import OracleMetadataCollector
+
+    executed = []
+
+    class FakeAdapter:
+        def execute_query(self, sql, params=None):
+            executed.append((sql, params))
+            if "all_tab_comments" in sql:
+                return QueryResult(
+                    columns=["TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"],
+                    rows=[["T_ORDER", "TABLE", "订单表"], ["V_ORDER", "VIEW", "订单视图"]],
+                    row_count=2,
+                )
+            if "num_rows" in sql:
+                return QueryResult(
+                    columns=["TABLE_NAME", "NUM_ROWS", "LAST_ANALYZED", "AVG_ROW_LEN", "BLOCKS"],
+                    rows=[["T_ORDER", 12, None, 80, 2]],
+                    row_count=1,
+                )
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    collector = OracleMetadataCollector(FakeAdapter(), {})
+
+    tables = collector.collect_tables("DWHRPT")
+
+    table_sql = executed[0][0]
+    assert "t.table_type" not in table_sql.lower()
+    assert "all_tab_comments" in table_sql.lower()
+    assert tables[0].table_name == "T_ORDER"
+    assert tables[0].table_type == "TABLE"
+    assert tables[0].row_count_est == 12
+    assert tables[1].table_name == "V_ORDER"
+    assert tables[1].table_type == "VIEW"
+
+
+def test_oracle_collect_columns_uses_non_reserved_comment_alias():
+    """Oracle 字段采集 SQL 不应使用 comment 作为列别名。"""
+    from app.adapters.base import QueryResult
+    from app.collectors.oracle_collector import OracleMetadataCollector
+
+    executed = []
+
+    class FakeAdapter:
+        def execute_query(self, sql, params=None):
+            executed.append((sql, params))
+            if "all_tab_columns" in sql:
+                return QueryResult(
+                    columns=[
+                        "COLUMN_NAME",
+                        "COLUMN_TYPE",
+                        "DATA_LENGTH",
+                        "NULLABLE",
+                        "COLUMN_ID",
+                        "DATA_DEFAULT",
+                        "COLUMN_COMMENT",
+                    ],
+                    rows=[["ORDER_ID", "NUMBER(18,0)", 22, "N", 1, None, "订单 ID"]],
+                    row_count=1,
+                )
+            if "all_constraints" in sql:
+                return QueryResult(columns=["COLUMN_NAME"], rows=[], row_count=0)
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    collector = OracleMetadataCollector(FakeAdapter(), {})
+
+    columns = collector.collect_columns("DWHRPT", "T_ORDER")
+
+    column_sql = executed[0][0].lower()
+    assert "as comment" not in column_sql
+    assert "as column_comment" in column_sql
+    assert columns[0].column_name == "ORDER_ID"
+    assert columns[0].comment == "订单 ID"
+
+
+def test_oracle_collect_columns_raises_query_errors():
+    """Oracle 字段采集 SQL 错误不应被吞成空字段。"""
+    from app.adapters.base import QueryResult
+    from app.collectors.oracle_collector import OracleMetadataCollector
+
+    class FakeAdapter:
+        def execute_query(self, sql, params=None):
+            return QueryResult(columns=[], rows=[], row_count=0, error="ORA-00923: FROM keyword not found")
+
+    collector = OracleMetadataCollector(FakeAdapter(), {})
+
+    with pytest.raises(RuntimeError, match="ORA-00923"):
+        collector.collect_columns("DWHRPT", "T_ORDER")
 
 
 def test_create_metadata_collection_job_api_returns_running_and_schedules_background(client, monkeypatch):

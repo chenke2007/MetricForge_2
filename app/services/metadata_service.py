@@ -39,6 +39,8 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
         if not schemas:
             all_schemas = collector.collect_schemas()
             schemas = [s.name for s in all_schemas]
+        else:
+            schemas = [schema.strip().upper() for schema in schemas if schema and schema.strip()]
 
         stats = {
             "schemas": 0,
@@ -51,9 +53,13 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
         for schema in schemas:
             try:
-                stats["schemas"] += 1
                 tables = collector.collect_tables(schema)
-                stats["tables"] += len(tables)
+                schema_stats = {
+                    "tables": len(tables),
+                    "columns": 0,
+                    "indexes": 0,
+                    "constraints": 0,
+                }
 
                 for table_info in tables:
                     # 先检查表是否已存在
@@ -92,7 +98,7 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
                     # 字段
                     columns = collector.collect_columns(schema, table_info.table_name)
-                    stats["columns"] += len(columns)
+                    schema_stats["columns"] += len(columns)
 
                     db.query(ColumnMetadata).filter(ColumnMetadata.table_id == table.id).delete()
                     for col_info in columns:
@@ -113,7 +119,7 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
                     # 索引
                     indexes = collector.collect_indexes(schema, table_info.table_name)
-                    stats["indexes"] += len(indexes)
+                    schema_stats["indexes"] += len(indexes)
                     db.query(IndexMetadata).filter(IndexMetadata.table_id == table.id).delete()
                     for idx_info in indexes:
                         idx = IndexMetadata(
@@ -126,7 +132,7 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
                     # 约束
                     constraints = collector.collect_constraints(schema, table_info.table_name)
-                    stats["constraints"] += len(constraints)
+                    schema_stats["constraints"] += len(constraints)
                     db.query(ConstraintMetadata).filter(ConstraintMetadata.table_id == table.id).delete()
                     for con_info in constraints:
                         con = ConstraintMetadata(
@@ -143,12 +149,22 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
                     table.collected_at = datetime.utcnow()
 
                 db.commit()
+                stats["schemas"] += 1
+                stats["tables"] += schema_stats["tables"]
+                stats["columns"] += schema_stats["columns"]
+                stats["indexes"] += schema_stats["indexes"]
+                stats["constraints"] += schema_stats["constraints"]
                 logger.info("Schema %s 采集完成: %d 表", schema, len(tables))
 
             except Exception as e:
                 logger.error("Schema %s 采集失败: %s", schema, e)
                 stats["errors"].append(f"{schema}: {e}")
                 db.rollback()
+
+        if stats["errors"] and stats["schemas"] == 0:
+            error_message = "; ".join(stats["errors"])
+            logger.error("元数据采集失败，所有请求 schema 均未采集到表: %s", error_message)
+            return {"success": False, "error": error_message, "stats": stats}
 
         # 采集后治理检测
         _detect_missing_semantics(db, ds_id)
