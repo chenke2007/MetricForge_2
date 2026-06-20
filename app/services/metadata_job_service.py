@@ -164,6 +164,8 @@ def execute_metadata_collection_job(job_id: int) -> dict | None:
 def run_metadata_collection_job(datasource_id: int, triggered_by: str = "web") -> dict:
     """Create and synchronously run a metadata collection job."""
     job = create_metadata_collection_job(datasource_id, triggered_by=triggered_by)
+    if job.get("reused_running_job"):
+        return job
     result = execute_metadata_collection_job(job["id"])
     if result is None:
         raise ValueError("\u91c7\u96c6\u4efb\u52a1\u4e0d\u5b58\u5728")

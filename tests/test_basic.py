@@ -1074,6 +1074,46 @@ def test_execute_metadata_collection_job_uses_datasource_schema_filter(app, monk
         db.close()
 
 
+def test_run_metadata_collection_job_returns_reused_running_without_executing(app, monkeypatch):
+    """Synchronous collection returns an existing running job without executing it again."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="sync reuse running datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        running = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="running",
+            triggered_by="pytest",
+            schema_filter="DWHRPT",
+        )
+        db.add(running)
+        db.commit()
+        db.refresh(running)
+
+        def fail_if_executed(job_id):
+            raise AssertionError(f"should not execute reused running job {job_id}")
+
+        monkeypatch.setattr(metadata_job_service, "execute_metadata_collection_job", fail_if_executed)
+
+        job = metadata_job_service.run_metadata_collection_job(ds.id)
+
+        assert job["id"] == running.id
+        assert job["status"] == "running"
+        assert job["reused_running_job"] is True
+    finally:
+        db.close()
+
+
 def test_run_metadata_collection_job_records_success(app, monkeypatch):
     """Metadata collection jobs record success state and stats."""
     from app.services import metadata_job_service
@@ -1641,6 +1681,52 @@ def test_legacy_metadata_collect_api_still_uses_synchronous_job_service(client, 
     assert data["message"] == "元数据采集完成"
     assert data["job"]["status"] == "success"
     assert data["stats"]["tables"] == 5
+
+
+def test_legacy_metadata_collect_api_returns_reused_running_job(client, monkeypatch):
+    """Legacy collection API returns 200 when an existing running job is reused."""
+    from app.api import metadata as metadata_api
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "legacy reused running datasource",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        metadata_api,
+        "run_metadata_collection_job",
+        lambda datasource_id, triggered_by="web": {
+            "id": 103,
+            "datasource_id": datasource_id,
+            "status": "running",
+            "reused_running_job": True,
+            "tables_count": 2,
+            "columns_count": 7,
+            "indexes_count": 1,
+            "constraints_count": 0,
+            "duration_ms": None,
+            "error_message": None,
+            "error_details": None,
+        },
+    )
+
+    resp = client.post(f"/api/metadata/collect/{ds_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "元数据采集任务正在执行"
+    assert data["job"]["id"] == 103
+    assert data["job"]["status"] == "running"
+    assert data["job"]["reused_running_job"] is True
+    assert data["stats"]["tables"] == 2
+    assert data["stats"]["columns"] == 7
 
 
 def test_datasource_detail_shows_collection_jobs(client):

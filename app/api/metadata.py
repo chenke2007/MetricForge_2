@@ -141,6 +141,18 @@ def trigger_collection(
     """触发元数据采集（兼容旧接口）"""
     try:
         job = run_metadata_collection_job(datasource_id)
+        if job["status"] == "running" and job.get("reused_running_job"):
+            return {
+                "message": "元数据采集任务正在执行",
+                "job": job,
+                "stats": {
+                    "tables": job["tables_count"],
+                    "columns": job["columns_count"],
+                    "indexes": job["indexes_count"],
+                    "constraints": job["constraints_count"],
+                    "errors": job["error_details"].splitlines() if job.get("error_details") else [],
+                },
+            }
         if job["status"] in ("success", "partial_success"):
             return {
                 "message": "元数据采集完成",
