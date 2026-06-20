@@ -18,6 +18,30 @@ from .datasource_service import get_adapter_for_datasource
 logger = logging.getLogger(__name__)
 
 
+def _empty_change_stats() -> dict:
+    return {
+        "tables_added": 0,
+        "tables_updated": 0,
+        "tables_deactivated": 0,
+        "columns_added": 0,
+        "columns_updated": 0,
+        "columns_deactivated": 0,
+        "columns_type_changed": 0,
+        "columns_comment_changed": 0,
+        "indexes_added": 0,
+        "indexes_deactivated": 0,
+        "constraints_added": 0,
+        "constraints_deactivated": 0,
+        "samples": [],
+    }
+
+
+def _add_change_sample(changes: dict, kind: str, path: str) -> None:
+    if len(changes["samples"]) >= 50:
+        return
+    changes["samples"].append({"kind": kind, "path": path})
+
+
 def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
     """执行元数据采集
 
@@ -49,6 +73,7 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
             "indexes": 0,
             "constraints": 0,
             "errors": [],
+            "changes": _empty_change_stats(),
         }
 
         for schema in schemas:

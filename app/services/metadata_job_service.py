@@ -1,5 +1,6 @@
 """Metadata collection job service."""
 
+import json
 import logging
 from datetime import UTC, datetime
 
@@ -141,6 +142,20 @@ def execute_metadata_collection_job(job_id: int) -> dict | None:
             job.columns_count = stats.get("columns", 0) or 0
             job.indexes_count = stats.get("indexes", 0) or 0
             job.constraints_count = stats.get("constraints", 0) or 0
+            changes = stats.get("changes") or {}
+            job.tables_added_count = changes.get("tables_added", 0) or 0
+            job.tables_updated_count = changes.get("tables_updated", 0) or 0
+            job.tables_deactivated_count = changes.get("tables_deactivated", 0) or 0
+            job.columns_added_count = changes.get("columns_added", 0) or 0
+            job.columns_updated_count = changes.get("columns_updated", 0) or 0
+            job.columns_deactivated_count = changes.get("columns_deactivated", 0) or 0
+            job.columns_type_changed_count = changes.get("columns_type_changed", 0) or 0
+            job.columns_comment_changed_count = changes.get("columns_comment_changed", 0) or 0
+            job.indexes_added_count = changes.get("indexes_added", 0) or 0
+            job.indexes_deactivated_count = changes.get("indexes_deactivated", 0) or 0
+            job.constraints_added_count = changes.get("constraints_added", 0) or 0
+            job.constraints_deactivated_count = changes.get("constraints_deactivated", 0) or 0
+            job.change_summary = json.dumps(changes, ensure_ascii=False) if changes else None
 
             if result.get("success"):
                 if errors:

@@ -987,6 +987,66 @@ def test_execute_metadata_collection_job_updates_running_job_to_success(app, mon
         db.close()
 
 
+def test_execute_metadata_collection_job_records_change_counts(app, monkeypatch):
+    """任务执行完成后写入变更统计和摘要。"""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="change stats datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        job_record = MetadataCollectionJob(datasource_id=ds.id, status="running", triggered_by="pytest")
+        db.add(job_record)
+        db.commit()
+        db.refresh(job_record)
+
+        def fake_collect_metadata(datasource_id):
+            return {
+                "success": True,
+                "stats": {
+                    "schemas": 1,
+                    "tables": 1,
+                    "columns": 2,
+                    "indexes": 0,
+                    "constraints": 0,
+                    "errors": [],
+                    "changes": {
+                        "tables_added": 1,
+                        "tables_updated": 0,
+                        "tables_deactivated": 0,
+                        "columns_added": 2,
+                        "columns_updated": 0,
+                        "columns_deactivated": 0,
+                        "columns_type_changed": 0,
+                        "columns_comment_changed": 0,
+                        "indexes_added": 0,
+                        "indexes_deactivated": 0,
+                        "constraints_added": 0,
+                        "constraints_deactivated": 0,
+                        "samples": [{"kind": "column_added", "path": "DWHRPT.T_ORDER.ORDER_ID"}],
+                    },
+                },
+            }
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+        job = metadata_job_service.execute_metadata_collection_job(job_record.id)
+
+        assert job["tables_added_count"] == 1
+        assert job["columns_added_count"] == 2
+        assert "DWHRPT.T_ORDER.ORDER_ID" in job["change_summary"]
+    finally:
+        db.close()
+
+
 def test_execute_metadata_collection_job_records_failure_when_datasource_missing(app):
     """Executing a job fails when the datasource was deleted."""
     from app.services import metadata_job_service
