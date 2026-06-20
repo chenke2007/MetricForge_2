@@ -132,6 +132,56 @@ def test_create_metadata_collection_job(db_session):
     assert saved.columns_count == 0
 
 
+def test_metadata_models_include_active_state_and_unique_indexes(db_session):
+    """元数据模型具备稳定刷新所需字段和唯一索引。"""
+    from sqlalchemy import inspect
+
+    inspector = inspect(db_session.bind)
+
+    table_columns = {col["name"] for col in inspector.get_columns("table_metadata")}
+    column_columns = {col["name"] for col in inspector.get_columns("column_metadata")}
+    index_columns = {col["name"] for col in inspector.get_columns("index_metadata")}
+    constraint_columns = {col["name"] for col in inspector.get_columns("constraint_metadata")}
+
+    for columns in (table_columns, column_columns, index_columns, constraint_columns):
+        assert {"is_active", "first_collected_at", "last_collected_at", "dropped_at"} <= columns
+
+    table_indexes = inspector.get_indexes("table_metadata")
+    column_indexes = inspector.get_indexes("column_metadata")
+    index_indexes = inspector.get_indexes("index_metadata")
+    constraint_indexes = inspector.get_indexes("constraint_metadata")
+
+    assert any(i["name"] == "ux_table_metadata_identity" and i["unique"] for i in table_indexes)
+    assert any(i["name"] == "ux_column_metadata_identity" and i["unique"] for i in column_indexes)
+    assert any(i["name"] == "ux_index_metadata_identity" and i["unique"] for i in index_indexes)
+    assert any(i["name"] == "ux_constraint_metadata_identity" and i["unique"] for i in constraint_indexes)
+
+
+def test_metadata_job_model_includes_change_summary_fields(db_session):
+    """采集任务模型记录安全刷新模式和变更统计。"""
+    from sqlalchemy import inspect
+
+    columns = {col["name"] for col in inspect(db_session.bind).get_columns("metadata_collection_job")}
+
+    assert {
+        "collection_mode",
+        "reused_running_job",
+        "tables_added_count",
+        "tables_updated_count",
+        "tables_deactivated_count",
+        "columns_added_count",
+        "columns_updated_count",
+        "columns_deactivated_count",
+        "columns_type_changed_count",
+        "columns_comment_changed_count",
+        "indexes_added_count",
+        "indexes_deactivated_count",
+        "constraints_added_count",
+        "constraints_deactivated_count",
+        "change_summary",
+    } <= columns
+
+
 def test_create_app_uses_explicit_database_url(tmp_path):
     """测试 create_app 使用显式传入的数据库 URL 初始化数据库"""
     from app.main import create_app

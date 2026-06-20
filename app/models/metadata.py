@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -12,6 +12,9 @@ class TableMetadata(Base):
     """表元数据"""
 
     __tablename__ = "table_metadata"
+    __table_args__ = (
+        Index("ux_table_metadata_identity", "datasource_id", "schema_name", "table_name", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     datasource_id: Mapped[int] = mapped_column(Integer, ForeignKey("datasource_config.id"), nullable=False, comment="所属数据源")
@@ -24,6 +27,10 @@ class TableMetadata(Base):
     avg_row_len: Mapped[int] = mapped_column(Integer, nullable=True, comment="平均行长度（字节）")
     num_blocks: Mapped[int] = mapped_column(Integer, nullable=True, comment="块数")
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否敏感表")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="源端是否仍存在")
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="首次采集时间")
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="最近采集时间")
+    dropped_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="源端下线时间")
     collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), comment="采集时间")
 
     # 关联
@@ -40,6 +47,9 @@ class ColumnMetadata(Base):
     """字段元数据"""
 
     __tablename__ = "column_metadata"
+    __table_args__ = (
+        Index("ux_column_metadata_identity", "table_id", "column_name", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     table_id: Mapped[int] = mapped_column(Integer, ForeignKey("table_metadata.id"), nullable=False, comment="所属表")
@@ -57,6 +67,10 @@ class ColumnMetadata(Base):
     null_rate: Mapped[float] = mapped_column(Float, nullable=True, comment="空值率")
     enum_samples: Mapped[str] = mapped_column(Text, nullable=True, comment="枚举值样例")
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否敏感字段")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="源端是否仍存在")
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="首次采集时间")
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="最近采集时间")
+    dropped_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="源端下线时间")
     collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), comment="采集时间")
 
     # 关联
@@ -71,12 +85,19 @@ class IndexMetadata(Base):
     """索引元数据"""
 
     __tablename__ = "index_metadata"
+    __table_args__ = (
+        Index("ux_index_metadata_identity", "table_id", "index_name", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     table_id: Mapped[int] = mapped_column(Integer, ForeignKey("table_metadata.id"), nullable=False, comment="所属表")
     index_name: Mapped[str] = mapped_column(String(200), nullable=False, comment="索引名")
     index_type: Mapped[str] = mapped_column(String(50), nullable=True, comment="索引类型: NORMAL/UNIQUE/BITMAP/FUNCTION-BASED")
     column_names: Mapped[str] = mapped_column(Text, nullable=True, comment="涉及字段列表（逗号分隔）")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="源端是否仍存在")
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="首次采集时间")
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="最近采集时间")
+    dropped_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="源端下线时间")
 
     # 关联
     table = relationship("TableMetadata", back_populates="indexes")
@@ -89,6 +110,9 @@ class ConstraintMetadata(Base):
     """约束/主外键元数据"""
 
     __tablename__ = "constraint_metadata"
+    __table_args__ = (
+        Index("ux_constraint_metadata_identity", "table_id", "constraint_name", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     table_id: Mapped[int] = mapped_column(Integer, ForeignKey("table_metadata.id"), nullable=False, comment="约束表")
@@ -97,6 +121,10 @@ class ConstraintMetadata(Base):
     column_names: Mapped[str] = mapped_column(Text, nullable=True, comment="涉及字段（逗号分隔）")
     ref_table: Mapped[str] = mapped_column(String(200), nullable=True, comment="引用表（外键）")
     ref_columns: Mapped[str] = mapped_column(Text, nullable=True, comment="引用字段（逗号分隔）")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="源端是否仍存在")
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="首次采集时间")
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="最近采集时间")
+    dropped_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="源端下线时间")
 
     # 关联
     table = relationship("TableMetadata", back_populates="constraints")
