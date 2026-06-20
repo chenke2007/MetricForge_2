@@ -36,5 +36,9 @@ def get_session():
 
 
 def init_tables():
-    """创建所有表（基于 Base 的元数据）"""
-    Base.metadata.create_all(bind=get_engine())
+    """创建所有表（基于 Base 的元数据），并补齐轻量迁移。"""
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    from app.services.schema_migration_service import ensure_sqlite_schema
+
+    ensure_sqlite_schema(engine)

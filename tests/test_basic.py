@@ -182,6 +182,66 @@ def test_metadata_job_model_includes_change_summary_fields(db_session):
     } <= columns
 
 
+def test_init_tables_adds_metadata_refresh_columns_to_existing_database(tmp_path):
+    """已有 SQLite 库初始化时会补齐稳定刷新字段。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.models import init_db, init_tables
+
+    db_path = tmp_path / "legacy.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE table_metadata (
+                id INTEGER PRIMARY KEY,
+                datasource_id INTEGER NOT NULL,
+                schema_name VARCHAR(100) NOT NULL,
+                table_name VARCHAR(200) NOT NULL,
+                table_comment TEXT,
+                table_type VARCHAR(50),
+                row_count_est INTEGER,
+                last_analyzed_at DATETIME,
+                avg_row_len INTEGER,
+                num_blocks INTEGER,
+                is_sensitive BOOLEAN,
+                collected_at DATETIME
+            )
+        """))
+    engine.dispose()
+
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    columns = {col["name"] for col in inspect(create_engine(f"sqlite:///{db_path}")).get_columns("table_metadata")}
+    assert {"is_active", "first_collected_at", "last_collected_at", "dropped_at"} <= columns
+
+
+def test_schema_migration_creates_unique_indexes_on_existing_database(tmp_path):
+    """已有 SQLite 库初始化时会创建自然键唯一索引。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.models import init_db, init_tables
+
+    db_path = tmp_path / "legacy-index.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE column_metadata (
+                id INTEGER PRIMARY KEY,
+                table_id INTEGER NOT NULL,
+                column_name VARCHAR(200) NOT NULL,
+                column_type VARCHAR(100) NOT NULL
+            )
+        """))
+    engine.dispose()
+
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    indexes = inspect(create_engine(f"sqlite:///{db_path}")).get_indexes("column_metadata")
+    assert any(i["name"] == "ux_column_metadata_identity" and i["unique"] for i in indexes)
+
+
 def test_create_app_uses_explicit_database_url(tmp_path):
     """测试 create_app 使用显式传入的数据库 URL 初始化数据库"""
     from app.main import create_app
