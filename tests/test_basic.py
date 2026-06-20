@@ -1029,6 +1029,47 @@ def test_execute_metadata_collection_job_returns_none_for_missing_job(app):
     assert metadata_job_service.execute_metadata_collection_job(999999) is None
 
 
+def test_execute_metadata_collection_job_skips_terminal_job_without_collecting(app, monkeypatch):
+    """Executing a terminal job returns it unchanged without collecting again."""
+    from app.services import metadata_job_service
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="terminal job datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        job_record = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="success",
+            tables_count=3,
+            columns_count=12,
+            triggered_by="pytest",
+        )
+        db.add(job_record)
+        db.commit()
+        db.refresh(job_record)
+
+        def fail_if_collected(datasource_id, schemas=None):
+            raise AssertionError(f"should not collect terminal job for datasource {datasource_id}")
+
+        monkeypatch.setattr(metadata_job_service, "collect_metadata", fail_if_collected)
+
+        job = metadata_job_service.execute_metadata_collection_job(job_record.id)
+
+        assert job["status"] == "success"
+        assert job["tables_count"] == 3
+        assert job["columns_count"] == 12
+    finally:
+        db.close()
+
+
 def test_execute_metadata_collection_job_uses_datasource_schema_filter(app, monkeypatch):
     """Executing a job uses datasource schema_names as uppercase collect scope."""
     from app.services import metadata_job_service

@@ -115,6 +115,8 @@ def execute_metadata_collection_job(job_id: int) -> dict | None:
         job = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.id == job_id).first()
         if not job:
             return None
+        if job.status != "running":
+            return serialize_collection_job(job)
 
         ds = db.query(DatasourceConfig).filter(DatasourceConfig.id == job.datasource_id).first()
         if not ds:
