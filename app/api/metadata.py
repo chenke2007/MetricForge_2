@@ -168,7 +168,8 @@ def create_collection_job(datasource_id: int, background_tasks: BackgroundTasks)
     """创建元数据采集任务并在后台执行"""
     try:
         job = create_metadata_collection_job(datasource_id)
-        background_tasks.add_task(execute_metadata_collection_job, job["id"])
+        if not job.get("reused_running_job"):
+            background_tasks.add_task(execute_metadata_collection_job, job["id"])
         return job
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

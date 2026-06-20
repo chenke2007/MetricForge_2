@@ -1351,6 +1351,68 @@ def test_oracle_collect_columns_raises_query_errors():
         collector.collect_columns("DWHRPT", "T_ORDER")
 
 
+def test_create_metadata_collection_job_reuses_running_job(app):
+    """同一数据源已有 running 任务时复用已有任务。"""
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="reuse running datasource",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+        )
+        db.add(ds)
+        db.flush()
+        running = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="running",
+            triggered_by="pytest",
+            schema_filter="DWHRPT",
+        )
+        db.add(running)
+        db.commit()
+        db.refresh(running)
+
+        from app.services.metadata_job_service import create_metadata_collection_job
+
+        job = create_metadata_collection_job(ds.id, triggered_by="web")
+
+        assert job["id"] == running.id
+        assert job["status"] == "running"
+        assert job["reused_running_job"] is True
+    finally:
+        db.close()
+
+
+def test_create_collection_job_api_does_not_schedule_reused_running_job(client, monkeypatch):
+    """API 复用 running 任务时不重复注册后台任务。"""
+    from app.api import metadata as metadata_api
+
+    scheduled = []
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        return {
+            "id": 55,
+            "datasource_id": datasource_id,
+            "status": "running",
+            "reused_running_job": True,
+            "collection_mode": "safe_refresh",
+        }
+
+    class FakeBackgroundTasks:
+        def add_task(self, func, *args, **kwargs):
+            scheduled.append((func, args, kwargs))
+
+    monkeypatch.setattr(metadata_api, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    resp = metadata_api.create_collection_job(1, background_tasks=FakeBackgroundTasks())
+
+    assert resp["id"] == 55
+    assert scheduled == []
+
+
 def test_create_metadata_collection_job_api_returns_running_and_schedules_background(client, monkeypatch):
     """测试新任务 API 创建 running 任务并注册后台执行"""
     from app.api import metadata as metadata_api

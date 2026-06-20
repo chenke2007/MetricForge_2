@@ -21,10 +21,25 @@ def serialize_collection_job(job: MetadataCollectionJob) -> dict:
         "started_at": str(job.started_at) if job.started_at else None,
         "finished_at": str(job.finished_at) if job.finished_at else None,
         "duration_ms": job.duration_ms,
+        "collection_mode": job.collection_mode,
+        "reused_running_job": job.reused_running_job,
         "tables_count": job.tables_count,
         "columns_count": job.columns_count,
         "indexes_count": job.indexes_count,
         "constraints_count": job.constraints_count,
+        "tables_added_count": job.tables_added_count,
+        "tables_updated_count": job.tables_updated_count,
+        "tables_deactivated_count": job.tables_deactivated_count,
+        "columns_added_count": job.columns_added_count,
+        "columns_updated_count": job.columns_updated_count,
+        "columns_deactivated_count": job.columns_deactivated_count,
+        "columns_type_changed_count": job.columns_type_changed_count,
+        "columns_comment_changed_count": job.columns_comment_changed_count,
+        "indexes_added_count": job.indexes_added_count,
+        "indexes_deactivated_count": job.indexes_deactivated_count,
+        "constraints_added_count": job.constraints_added_count,
+        "constraints_deactivated_count": job.constraints_deactivated_count,
+        "change_summary": job.change_summary,
         "error_message": job.error_message,
         "error_details": job.error_details,
     }
@@ -61,12 +76,29 @@ def create_metadata_collection_job(datasource_id: int, triggered_by: str = "web"
         if not ds:
             raise ValueError("\u6570\u636e\u6e90\u4e0d\u5b58\u5728")
 
+        running_job = (
+            db.query(MetadataCollectionJob)
+            .filter(
+                MetadataCollectionJob.datasource_id == datasource_id,
+                MetadataCollectionJob.status == "running",
+            )
+            .order_by(MetadataCollectionJob.started_at.desc())
+            .first()
+        )
+        if running_job:
+            running_job.reused_running_job = True
+            db.commit()
+            db.refresh(running_job)
+            return serialize_collection_job(running_job)
+
         job = MetadataCollectionJob(
             datasource_id=datasource_id,
             status="running",
             triggered_by=triggered_by,
             schema_filter=ds.schema_names,
             started_at=_utc_now(),
+            collection_mode="safe_refresh",
+            reused_running_job=False,
         )
         db.add(job)
         db.commit()
