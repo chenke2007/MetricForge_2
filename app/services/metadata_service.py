@@ -42,6 +42,100 @@ def _add_change_sample(changes: dict, kind: str, path: str) -> None:
     changes["samples"].append({"kind": kind, "path": path})
 
 
+def _touch_active(record, now: datetime) -> None:
+    if getattr(record, "first_collected_at", None) is None:
+        record.first_collected_at = now
+    record.last_collected_at = now
+    if hasattr(record, "collected_at"):
+        record.collected_at = now
+    record.is_active = True
+    record.dropped_at = None
+
+
+def _upsert_table(db, ds_id: int, schema: str, table_info, now: datetime, changes: dict):
+    table = (
+        db.query(TableMetadata)
+        .filter(
+            TableMetadata.datasource_id == ds_id,
+            TableMetadata.schema_name == schema,
+            TableMetadata.table_name == table_info.table_name,
+        )
+        .first()
+    )
+    if table is None:
+        table = TableMetadata(datasource_id=ds_id, schema_name=schema, table_name=table_info.table_name)
+        db.add(table)
+        changes["tables_added"] += 1
+        _add_change_sample(changes, "table_added", f"{schema}.{table_info.table_name}")
+    elif (
+        table.table_comment != table_info.table_comment
+        or table.table_type != table_info.table_type
+        or table.row_count_est != table_info.row_count_est
+    ):
+        changes["tables_updated"] += 1
+        _add_change_sample(changes, "table_updated", f"{schema}.{table_info.table_name}")
+
+    table.table_type = table_info.table_type
+    table.table_comment = table_info.table_comment
+    table.row_count_est = table_info.row_count_est
+    table.last_analyzed_at = table_info.last_analyzed_at
+    table.avg_row_len = table_info.avg_row_len
+    table.num_blocks = table_info.num_blocks
+    _touch_active(table, now)
+    db.flush()
+    return table
+
+
+def _upsert_columns(db, table, column_infos, now: datetime, changes: dict) -> int:
+    seen = set()
+    count = 0
+    existing = {col.column_name: col for col in db.query(ColumnMetadata).filter(ColumnMetadata.table_id == table.id).all()}
+
+    for col_info in column_infos:
+        seen.add(col_info.column_name)
+        count += 1
+        column = existing.get(col_info.column_name)
+        path = f"{table.schema_name}.{table.table_name}.{col_info.column_name}"
+        if column is None:
+            column = ColumnMetadata(table_id=table.id, column_name=col_info.column_name, column_type=col_info.column_type)
+            db.add(column)
+            changes["columns_added"] += 1
+            _add_change_sample(changes, "column_added", path)
+        else:
+            changed = False
+            if column.column_type != col_info.column_type:
+                changes["columns_type_changed"] += 1
+                _add_change_sample(changes, "column_type_changed", path)
+                changed = True
+            if (column.comment or "") != (col_info.comment or ""):
+                changes["columns_comment_changed"] += 1
+                _add_change_sample(changes, "column_comment_changed", path)
+                changed = True
+            if changed:
+                changes["columns_updated"] += 1
+
+        column.column_type = col_info.column_type
+        column.data_length = col_info.data_length
+        column.nullable = col_info.nullable
+        column.column_id = col_info.column_id
+        column.default_value = col_info.default_value
+        column.comment = col_info.comment
+        column.is_primary_key = col_info.is_primary_key
+        column.is_unique_key = col_info.is_unique_key
+        column.is_foreign_key = col_info.is_foreign_key
+        _touch_active(column, now)
+
+    for column_name, column in existing.items():
+        if column_name in seen or not column.is_active:
+            continue
+        column.is_active = False
+        column.dropped_at = now
+        changes["columns_deactivated"] += 1
+        _add_change_sample(changes, "column_deactivated", f"{table.schema_name}.{table.table_name}.{column_name}")
+
+    return count
+
+
 def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
     """执行元数据采集
 
@@ -78,6 +172,7 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
         for schema in schemas:
             try:
+                now = datetime.utcnow()
                 tables = collector.collect_tables(schema)
                 schema_stats = {
                     "tables": len(tables),
@@ -87,60 +182,11 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
                 }
 
                 for table_info in tables:
-                    # 先检查表是否已存在
-                    existing = (
-                        db.query(TableMetadata)
-                        .filter(
-                            TableMetadata.datasource_id == ds_id,
-                            TableMetadata.schema_name == schema,
-                            TableMetadata.table_name == table_info.table_name,
-                        )
-                        .first()
-                    )
-
-                    if existing:
-                        table = existing
-                        # 更新统计信息
-                        table.row_count_est = table_info.row_count_est
-                        table.table_comment = table_info.table_comment
-                        table.last_analyzed_at = table_info.last_analyzed_at
-                        table.avg_row_len = table_info.avg_row_len
-                        table.num_blocks = table_info.num_blocks
-                    else:
-                        table = TableMetadata(
-                            datasource_id=ds_id,
-                            schema_name=schema,
-                            table_name=table_info.table_name,
-                            table_type=table_info.table_type,
-                            table_comment=table_info.table_comment,
-                            row_count_est=table_info.row_count_est,
-                            last_analyzed_at=table_info.last_analyzed_at,
-                            avg_row_len=table_info.avg_row_len,
-                            num_blocks=table_info.num_blocks,
-                        )
-                        db.add(table)
-                    db.flush()
+                    table = _upsert_table(db, ds_id, schema, table_info, now, stats["changes"])
 
                     # 字段
                     columns = collector.collect_columns(schema, table_info.table_name)
-                    schema_stats["columns"] += len(columns)
-
-                    db.query(ColumnMetadata).filter(ColumnMetadata.table_id == table.id).delete()
-                    for col_info in columns:
-                        col = ColumnMetadata(
-                            table_id=table.id,
-                            column_name=col_info.column_name,
-                            column_type=col_info.column_type,
-                            data_length=col_info.data_length,
-                            nullable=col_info.nullable,
-                            column_id=col_info.column_id,
-                            default_value=col_info.default_value,
-                            comment=col_info.comment,
-                            is_primary_key=col_info.is_primary_key,
-                            is_unique_key=col_info.is_unique_key,
-                            is_foreign_key=col_info.is_foreign_key,
-                        )
-                        db.add(col)
+                    schema_stats["columns"] += _upsert_columns(db, table, columns, now, stats["changes"])
 
                     # 索引
                     indexes = collector.collect_indexes(schema, table_info.table_name)
@@ -169,9 +215,6 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
                             ref_columns=con_info.ref_columns,
                         )
                         db.add(con)
-
-                    # 标记采集时间
-                    table.collected_at = datetime.utcnow()
 
                 db.commit()
                 stats["schemas"] += 1

@@ -157,6 +157,58 @@ def test_metadata_models_include_active_state_and_unique_indexes(db_session):
     assert any(i["name"] == "ux_constraint_metadata_identity" and i["unique"] for i in constraint_indexes)
 
 
+def test_collect_metadata_reuses_existing_table_and_column_ids(app, monkeypatch):
+    """重复采集同一字段时字段 ID 保持稳定。"""
+    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    class StableCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            return [TableInfo(schema_name=schema, table_name="T_ORDER", table_comment="订单表")]
+
+        def collect_columns(self, schema, table):
+            return [ColumnInfo(column_name="ORDER_ID", column_type="NUMBER(18,0)", comment="订单 ID", column_id=1)]
+
+        def collect_indexes(self, schema, table):
+            return []
+
+        def collect_constraints(self, schema, table):
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", StableCollector)
+
+    first = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    db = get_session()
+    try:
+        column = db.query(ColumnMetadata).one()
+        first_column_id = column.id
+    finally:
+        db.close()
+
+    second = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    db = get_session()
+    try:
+        columns = db.query(ColumnMetadata).all()
+        tables = db.query(TableMetadata).all()
+        assert len(tables) == 1
+        assert len(columns) == 1
+        assert columns[0].id == first_column_id
+        assert columns[0].comment == "订单 ID"
+    finally:
+        db.close()
+
+    assert first["stats"]["changes"]["columns_added"] == 1
+    assert second["stats"]["changes"]["columns_added"] == 0
+
+
 def test_metadata_job_model_includes_change_summary_fields(db_session):
     """采集任务模型记录安全刷新模式和变更统计。"""
     from sqlalchemy import inspect
