@@ -299,6 +299,8 @@ def _detect_missing_semantics(db, ds_id: int):
         .join(TableMetadata)
         .filter(
             TableMetadata.datasource_id == ds_id,
+            TableMetadata.is_active.is_(True),
+            ColumnMetadata.is_active.is_(True),
         )
         .all()
     )

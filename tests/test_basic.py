@@ -401,6 +401,121 @@ def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
     assert result["stats"]["changes"]["tables_deactivated"] == 1
 
 
+def test_detect_missing_semantics_ignores_inactive_columns(db_session):
+    """Inactive columns are ignored when creating missing semantic tickets."""
+    from app.services.metadata_service import _detect_missing_semantics
+
+    ds = DatasourceConfig(
+        name="inactive semantic datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(
+        datasource_id=ds.id,
+        schema_name="DWHRPT",
+        table_name="T_ORDER",
+        table_type="TABLE",
+        is_active=True,
+    )
+    db_session.add(table)
+    db_session.flush()
+    active_col = ColumnMetadata(
+        table_id=table.id,
+        column_name="ORDER_ID",
+        column_type="NUMBER",
+        column_id=1,
+        is_active=True,
+    )
+    inactive_col = ColumnMetadata(
+        table_id=table.id,
+        column_name="OLD_CODE",
+        column_type="VARCHAR2(20)",
+        column_id=2,
+        is_active=False,
+    )
+    db_session.add_all([active_col, inactive_col])
+    db_session.commit()
+
+    _detect_missing_semantics(db_session, ds.id)
+    db_session.commit()
+
+    tickets = db_session.query(GovernanceTicket).filter(GovernanceTicket.ticket_type == "missing_semantic").all()
+    assert len(tickets) == 1
+    assert tickets[0].related_object_id == active_col.id
+
+
+def test_collect_metadata_does_not_create_missing_semantic_ticket_for_deactivated_column(app, monkeypatch):
+    """A column deactivated during collection does not get a new missing semantic ticket."""
+    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    calls = {"count": 0}
+
+    class ChangingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            return [TableInfo(schema_name=schema, table_name="T_ORDER")]
+
+        def collect_columns(self, schema, table):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return [
+                    ColumnInfo(column_name="ORDER_ID", column_type="NUMBER", column_id=1),
+                    ColumnInfo(column_name="OLD_CODE", column_type="VARCHAR2(20)", column_id=2),
+                ]
+            return [ColumnInfo(column_name="ORDER_ID", column_type="NUMBER", column_id=1)]
+
+        def collect_indexes(self, schema, table):
+            return []
+
+        def collect_constraints(self, schema, table):
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", ChangingCollector)
+
+    metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    db = get_session()
+    try:
+        old_col = db.query(ColumnMetadata).filter(ColumnMetadata.column_name == "OLD_CODE").one()
+        old_col_id = old_col.id
+        db.query(GovernanceTicket).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    db = get_session()
+    try:
+        old_col = db.query(ColumnMetadata).filter(ColumnMetadata.id == old_col_id).one()
+        old_code_ticket = (
+            db.query(GovernanceTicket)
+            .filter(
+                GovernanceTicket.ticket_type == "missing_semantic",
+                GovernanceTicket.related_object_type == "column",
+                GovernanceTicket.related_object_id == old_col_id,
+                GovernanceTicket.status.in_(["open", "in_progress"]),
+            )
+            .first()
+        )
+        assert old_col.is_active is False
+        assert old_code_ticket is None
+    finally:
+        db.close()
+
+
 def test_metadata_job_model_includes_change_summary_fields(db_session):
     """采集任务模型记录安全刷新模式和变更统计。"""
     from sqlalchemy import inspect
