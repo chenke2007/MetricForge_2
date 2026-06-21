@@ -89,6 +89,25 @@ def _upsert_table(db, ds_id: int, schema: str, table_info, now: datetime, change
     return table
 
 
+def _deactivate_missing_tables(db, ds_id: int, schema: str, seen_table_names: set[str], now: datetime, changes: dict) -> None:
+    active_tables = (
+        db.query(TableMetadata)
+        .filter(
+            TableMetadata.datasource_id == ds_id,
+            TableMetadata.schema_name == schema,
+            TableMetadata.is_active.is_(True),
+        )
+        .all()
+    )
+    for table in active_tables:
+        if table.table_name in seen_table_names:
+            continue
+        table.is_active = False
+        table.dropped_at = now
+        changes["tables_deactivated"] += 1
+        _add_change_sample(changes, "table_deactivated", f"{schema}.{table.table_name}")
+
+
 def _upsert_columns(db, table, column_infos, now: datetime, changes: dict) -> int:
     seen = set()
     count = 0
@@ -229,6 +248,14 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
                         )
                         db.add(con)
 
+                _deactivate_missing_tables(
+                    db,
+                    ds_id,
+                    schema,
+                    {table_info.table_name for table_info in tables},
+                    now,
+                    stats["changes"],
+                )
                 db.commit()
                 stats["schemas"] += 1
                 stats["tables"] += schema_stats["tables"]

@@ -289,6 +289,118 @@ def test_collect_metadata_counts_table_stats_and_column_attribute_updates(app, m
     assert second["stats"]["changes"]["columns_comment_changed"] == 0
 
 
+def test_collect_metadata_deactivates_missing_column_and_preserves_semantic(app, monkeypatch):
+    """源端缺失字段会下线，但字段语义仍保留。"""
+    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    calls = {"count": 0}
+
+    class ChangingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            return [TableInfo(schema_name=schema, table_name="T_ORDER")]
+
+        def collect_columns(self, schema, table):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return [
+                    ColumnInfo(column_name="ORDER_ID", column_type="NUMBER", column_id=1),
+                    ColumnInfo(column_name="OLD_CODE", column_type="VARCHAR2(20)", column_id=2),
+                ]
+            return [ColumnInfo(column_name="ORDER_ID", column_type="NUMBER", column_id=1)]
+
+        def collect_indexes(self, schema, table):
+            return []
+
+        def collect_constraints(self, schema, table):
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", ChangingCollector)
+
+    metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    db = get_session()
+    try:
+        old_col = db.query(ColumnMetadata).filter(ColumnMetadata.column_name == "OLD_CODE").one()
+        db.add(FieldSemantic(column_id=old_col.id, business_alias="旧编码", meaning="历史字段"))
+        db.commit()
+        old_col_id = old_col.id
+    finally:
+        db.close()
+
+    result = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    db = get_session()
+    try:
+        old_col = db.query(ColumnMetadata).filter(ColumnMetadata.id == old_col_id).one()
+        semantic = db.query(FieldSemantic).filter(FieldSemantic.column_id == old_col_id).one()
+        assert old_col.is_active is False
+        assert old_col.dropped_at is not None
+        assert semantic.business_alias == "旧编码"
+    finally:
+        db.close()
+
+    assert result["stats"]["changes"]["columns_deactivated"] == 1
+
+
+def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
+    """源端缺失表会标记下线，不物理删除。"""
+    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    calls = {"count": 0}
+
+    class ChangingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return [
+                    TableInfo(schema_name=schema, table_name="T_ORDER"),
+                    TableInfo(schema_name=schema, table_name="T_OLD"),
+                ]
+            return [TableInfo(schema_name=schema, table_name="T_ORDER")]
+
+        def collect_columns(self, schema, table):
+            return [ColumnInfo(column_name="ID", column_type="NUMBER", column_id=1)]
+
+        def collect_indexes(self, schema, table):
+            return []
+
+        def collect_constraints(self, schema, table):
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", ChangingCollector)
+
+    metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    result = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    db = get_session()
+    try:
+        old_table = db.query(TableMetadata).filter(TableMetadata.table_name == "T_OLD").one()
+        assert old_table.is_active is False
+        assert old_table.dropped_at is not None
+        assert db.query(TableMetadata).count() == 2
+    finally:
+        db.close()
+
+    assert result["stats"]["changes"]["tables_deactivated"] == 1
+
+
 def test_metadata_job_model_includes_change_summary_fields(db_session):
     """采集任务模型记录安全刷新模式和变更统计。"""
     from sqlalchemy import inspect
