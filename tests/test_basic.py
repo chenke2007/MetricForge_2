@@ -209,6 +209,86 @@ def test_collect_metadata_reuses_existing_table_and_column_ids(app, monkeypatch)
     assert second["stats"]["changes"]["columns_added"] == 0
 
 
+def test_collect_metadata_counts_table_stats_and_column_attribute_updates(app, monkeypatch):
+    """Repeated collection counts non-type/comment metadata changes as updates."""
+    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    class ChangingCollector:
+        collect_round = 0
+
+        def __init__(self, adapter, config):
+            self.round = ChangingCollector.collect_round
+            ChangingCollector.collect_round += 1
+
+        def collect_tables(self, schema):
+            if self.round == 0:
+                return [
+                    TableInfo(
+                        schema_name=schema,
+                        table_name="T_ORDER",
+                        row_count_est=10,
+                        avg_row_len=20,
+                        num_blocks=1,
+                    )
+                ]
+            return [
+                TableInfo(
+                    schema_name=schema,
+                    table_name="T_ORDER",
+                    row_count_est=10,
+                    avg_row_len=30,
+                    num_blocks=2,
+                )
+            ]
+
+        def collect_columns(self, schema, table):
+            if self.round == 0:
+                return [
+                    ColumnInfo(
+                        column_name="ORDER_ID",
+                        column_type="NUMBER(18,0)",
+                        nullable=True,
+                        column_id=1,
+                        default_value=None,
+                        comment="order id",
+                        is_primary_key=False,
+                    )
+                ]
+            return [
+                ColumnInfo(
+                    column_name="ORDER_ID",
+                    column_type="NUMBER(18,0)",
+                    nullable=False,
+                    column_id=1,
+                    default_value="0",
+                    comment="order id",
+                    is_primary_key=True,
+                )
+            ]
+
+        def collect_indexes(self, schema, table):
+            return []
+
+        def collect_constraints(self, schema, table):
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", ChangingCollector)
+
+    metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    second = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    assert second["stats"]["changes"]["tables_updated"] == 1
+    assert second["stats"]["changes"]["columns_updated"] == 1
+    assert second["stats"]["changes"]["columns_type_changed"] == 0
+    assert second["stats"]["changes"]["columns_comment_changed"] == 0
+
+
 def test_metadata_job_model_includes_change_summary_fields(db_session):
     """采集任务模型记录安全刷新模式和变更统计。"""
     from sqlalchemy import inspect

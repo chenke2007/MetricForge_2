@@ -71,6 +71,9 @@ def _upsert_table(db, ds_id: int, schema: str, table_info, now: datetime, change
         table.table_comment != table_info.table_comment
         or table.table_type != table_info.table_type
         or table.row_count_est != table_info.row_count_est
+        or table.last_analyzed_at != table_info.last_analyzed_at
+        or table.avg_row_len != table_info.avg_row_len
+        or table.num_blocks != table_info.num_blocks
     ):
         changes["tables_updated"] += 1
         _add_change_sample(changes, "table_updated", f"{schema}.{table_info.table_name}")
@@ -102,16 +105,26 @@ def _upsert_columns(db, table, column_infos, now: datetime, changes: dict) -> in
             changes["columns_added"] += 1
             _add_change_sample(changes, "column_added", path)
         else:
-            changed = False
-            if column.column_type != col_info.column_type:
+            type_changed = column.column_type != col_info.column_type
+            comment_changed = (column.comment or "") != (col_info.comment or "")
+            base_changed = any(
+                (
+                    column.data_length != col_info.data_length,
+                    column.nullable != col_info.nullable,
+                    column.column_id != col_info.column_id,
+                    column.default_value != col_info.default_value,
+                    column.is_primary_key != col_info.is_primary_key,
+                    column.is_unique_key != col_info.is_unique_key,
+                    column.is_foreign_key != col_info.is_foreign_key,
+                )
+            )
+            if type_changed:
                 changes["columns_type_changed"] += 1
                 _add_change_sample(changes, "column_type_changed", path)
-                changed = True
-            if (column.comment or "") != (col_info.comment or ""):
+            if comment_changed:
                 changes["columns_comment_changed"] += 1
                 _add_change_sample(changes, "column_comment_changed", path)
-                changed = True
-            if changed:
+            if base_changed or type_changed or comment_changed:
                 changes["columns_updated"] += 1
 
         column.column_type = col_info.column_type
