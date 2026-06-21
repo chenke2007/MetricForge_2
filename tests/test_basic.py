@@ -13,6 +13,8 @@ from app.models import (
     MetadataCollectionJob,
     TableMetadata,
     ColumnMetadata,
+    IndexMetadata,
+    ConstraintMetadata,
     FieldSemantic,
     get_session,
 )
@@ -399,6 +401,61 @@ def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
         db.close()
 
     assert result["stats"]["changes"]["tables_deactivated"] == 1
+
+
+def test_collect_metadata_upserts_indexes_and_constraints(app, monkeypatch):
+    """索引和约束重复采集不会重复插入，缺失时会下线。"""
+    from app.adapters.metadata_collector import ColumnInfo, ConstraintInfo, IndexInfo, TableInfo
+    from app.services import metadata_service
+
+    class FakeAdapter:
+        def close(self):
+            pass
+
+    calls = {"count": 0}
+
+    class ChangingCollector:
+        def __init__(self, adapter, config):
+            pass
+
+        def collect_tables(self, schema):
+            return [TableInfo(schema_name=schema, table_name="T_ORDER")]
+
+        def collect_columns(self, schema, table):
+            return [ColumnInfo(column_name="ORDER_ID", column_type="NUMBER", column_id=1)]
+
+        def collect_indexes(self, schema, table):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return [IndexInfo(index_name="IDX_ORDER_ID", index_type="NORMAL", column_names="ORDER_ID")]
+            return []
+
+        def collect_constraints(self, schema, table):
+            if calls["count"] == 1:
+                return [ConstraintInfo(constraint_name="PK_ORDER", constraint_type="P", column_names="ORDER_ID")]
+            return []
+
+    monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
+    monkeypatch.setattr(metadata_service, "OracleMetadataCollector", ChangingCollector)
+
+    first = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+    second = metadata_service.collect_metadata(1, schemas=["DWHRPT"])
+
+    db = get_session()
+    try:
+        indexes = db.query(IndexMetadata).all()
+        constraints = db.query(ConstraintMetadata).all()
+        assert len(indexes) == 1
+        assert len(constraints) == 1
+        assert indexes[0].is_active is False
+        assert constraints[0].is_active is False
+    finally:
+        db.close()
+
+    assert first["stats"]["changes"]["indexes_added"] == 1
+    assert first["stats"]["changes"]["constraints_added"] == 1
+    assert second["stats"]["changes"]["indexes_deactivated"] == 1
+    assert second["stats"]["changes"]["constraints_deactivated"] == 1
 
 
 def test_detect_missing_semantics_ignores_inactive_columns(db_session):

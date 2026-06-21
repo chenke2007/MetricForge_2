@@ -108,6 +108,24 @@ def _deactivate_missing_tables(db, ds_id: int, schema: str, seen_table_names: se
         _add_change_sample(changes, "table_deactivated", f"{schema}.{table.table_name}")
 
 
+def _mark_missing_inactive(
+    existing_by_name: dict,
+    seen_names: set[str],
+    now: datetime,
+    changes: dict,
+    counter: str,
+    kind: str,
+    prefix: str,
+) -> None:
+    for name, record in existing_by_name.items():
+        if name in seen_names or not record.is_active:
+            continue
+        record.is_active = False
+        record.dropped_at = now
+        changes[counter] += 1
+        _add_change_sample(changes, kind, f"{prefix}.{name}")
+
+
 def _upsert_columns(db, table, column_infos, now: datetime, changes: dict) -> int:
     seen = set()
     count = 0
@@ -168,6 +186,63 @@ def _upsert_columns(db, table, column_infos, now: datetime, changes: dict) -> in
     return count
 
 
+def _upsert_indexes(db, table, index_infos, now: datetime, changes: dict) -> int:
+    existing = {idx.index_name: idx for idx in db.query(IndexMetadata).filter(IndexMetadata.table_id == table.id).all()}
+    seen = set()
+    for idx_info in index_infos:
+        seen.add(idx_info.index_name)
+        index = existing.get(idx_info.index_name)
+        if index is None:
+            index = IndexMetadata(table_id=table.id, index_name=idx_info.index_name)
+            db.add(index)
+            changes["indexes_added"] += 1
+            _add_change_sample(changes, "index_added", f"{table.schema_name}.{table.table_name}.{idx_info.index_name}")
+        index.index_type = idx_info.index_type
+        index.column_names = idx_info.column_names
+        _touch_active(index, now)
+    _mark_missing_inactive(
+        existing,
+        seen,
+        now,
+        changes,
+        "indexes_deactivated",
+        "index_deactivated",
+        f"{table.schema_name}.{table.table_name}",
+    )
+    return len(index_infos)
+
+
+def _upsert_constraints(db, table, constraint_infos, now: datetime, changes: dict) -> int:
+    existing = {
+        con.constraint_name: con
+        for con in db.query(ConstraintMetadata).filter(ConstraintMetadata.table_id == table.id).all()
+    }
+    seen = set()
+    for con_info in constraint_infos:
+        seen.add(con_info.constraint_name)
+        constraint = existing.get(con_info.constraint_name)
+        if constraint is None:
+            constraint = ConstraintMetadata(table_id=table.id, constraint_name=con_info.constraint_name)
+            db.add(constraint)
+            changes["constraints_added"] += 1
+            _add_change_sample(changes, "constraint_added", f"{table.schema_name}.{table.table_name}.{con_info.constraint_name}")
+        constraint.constraint_type = con_info.constraint_type
+        constraint.column_names = con_info.column_names
+        constraint.ref_table = con_info.ref_table
+        constraint.ref_columns = con_info.ref_columns
+        _touch_active(constraint, now)
+    _mark_missing_inactive(
+        existing,
+        seen,
+        now,
+        changes,
+        "constraints_deactivated",
+        "constraint_deactivated",
+        f"{table.schema_name}.{table.table_name}",
+    )
+    return len(constraint_infos)
+
+
 def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
     """执行元数据采集
 
@@ -222,32 +297,10 @@ def collect_metadata(ds_id: int, schemas: list[str] | None = None) -> dict:
 
                     # 索引
                     indexes = collector.collect_indexes(schema, table_info.table_name)
-                    schema_stats["indexes"] += len(indexes)
-                    db.query(IndexMetadata).filter(IndexMetadata.table_id == table.id).delete()
-                    for idx_info in indexes:
-                        idx = IndexMetadata(
-                            table_id=table.id,
-                            index_name=idx_info.index_name,
-                            index_type=idx_info.index_type,
-                            column_names=idx_info.column_names,
-                        )
-                        db.add(idx)
-
+                    schema_stats["indexes"] += _upsert_indexes(db, table, indexes, now, stats["changes"])
                     # 约束
                     constraints = collector.collect_constraints(schema, table_info.table_name)
-                    schema_stats["constraints"] += len(constraints)
-                    db.query(ConstraintMetadata).filter(ConstraintMetadata.table_id == table.id).delete()
-                    for con_info in constraints:
-                        con = ConstraintMetadata(
-                            table_id=table.id,
-                            constraint_name=con_info.constraint_name,
-                            constraint_type=con_info.constraint_type,
-                            column_names=con_info.column_names,
-                            ref_table=con_info.ref_table,
-                            ref_columns=con_info.ref_columns,
-                        )
-                        db.add(con)
-
+                    schema_stats["constraints"] += _upsert_constraints(db, table, constraints, now, stats["changes"])
                 _deactivate_missing_tables(
                     db,
                     ds_id,
