@@ -354,7 +354,7 @@ def test_collect_metadata_deactivates_missing_column_and_preserves_semantic(app,
 
 def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
     """源端缺失表会标记下线，不物理删除。"""
-    from app.adapters.metadata_collector import ColumnInfo, TableInfo
+    from app.adapters.metadata_collector import ColumnInfo, ConstraintInfo, IndexInfo, TableInfo
     from app.services import metadata_service
 
     class FakeAdapter:
@@ -380,9 +380,13 @@ def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
             return [ColumnInfo(column_name="ID", column_type="NUMBER", column_id=1)]
 
         def collect_indexes(self, schema, table):
+            if table == "T_OLD":
+                return [IndexInfo(index_name="IDX_OLD_ID", index_type="NORMAL", column_names="ID")]
             return []
 
         def collect_constraints(self, schema, table):
+            if table == "T_OLD":
+                return [ConstraintInfo(constraint_name="PK_OLD", constraint_type="P", column_names="ID")]
             return []
 
     monkeypatch.setattr(metadata_service, "get_adapter_for_datasource", lambda ds_id: FakeAdapter())
@@ -396,6 +400,12 @@ def test_collect_metadata_deactivates_missing_table(app, monkeypatch):
         old_table = db.query(TableMetadata).filter(TableMetadata.table_name == "T_OLD").one()
         assert old_table.is_active is False
         assert old_table.dropped_at is not None
+        assert old_table.columns[0].is_active is False
+        assert old_table.columns[0].dropped_at is not None
+        assert old_table.indexes[0].is_active is False
+        assert old_table.indexes[0].dropped_at is not None
+        assert old_table.constraints[0].is_active is False
+        assert old_table.constraints[0].dropped_at is not None
         assert db.query(TableMetadata).count() == 2
     finally:
         db.close()
@@ -656,6 +666,36 @@ def test_schema_migration_creates_unique_indexes_on_existing_database(tmp_path):
 
     indexes = inspect(create_engine(f"sqlite:///{db_path}")).get_indexes("column_metadata")
     assert any(i["name"] == "ux_column_metadata_identity" and i["unique"] for i in indexes)
+
+
+def test_schema_migration_skips_unique_index_when_legacy_duplicates_exist(tmp_path):
+    """Legacy duplicate natural keys do not prevent app startup migrations."""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.models import init_db, init_tables
+
+    db_path = tmp_path / "legacy-duplicate-index.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE column_metadata (
+                id INTEGER PRIMARY KEY,
+                table_id INTEGER NOT NULL,
+                column_name VARCHAR(200) NOT NULL,
+                column_type VARCHAR(100) NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO column_metadata (id, table_id, column_name, column_type)
+            VALUES (1, 10, 'ORDER_ID', 'NUMBER'), (2, 10, 'ORDER_ID', 'NUMBER')
+        """))
+    engine.dispose()
+
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    indexes = inspect(create_engine(f"sqlite:///{db_path}")).get_indexes("column_metadata")
+    assert not any(i["name"] == "ux_column_metadata_identity" for i in indexes)
 
 
 def test_create_app_uses_explicit_database_url(tmp_path):

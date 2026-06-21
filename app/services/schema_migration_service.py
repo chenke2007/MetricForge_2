@@ -56,6 +56,14 @@ UNIQUE_INDEXES = {
 }
 
 
+def _has_duplicate_natural_keys(conn, table_name: str, column_names: list[str]) -> bool:
+    joined = ", ".join(column_names)
+    duplicate = conn.execute(text(
+        f"SELECT 1 FROM {table_name} GROUP BY {joined} HAVING COUNT(*) > 1 LIMIT 1"
+    )).first()
+    return duplicate is not None
+
+
 def ensure_sqlite_schema(engine) -> None:
     """Add columns and indexes missing from existing SQLite databases."""
     if engine.dialect.name != "sqlite":
@@ -82,6 +90,8 @@ def ensure_sqlite_schema(engine) -> None:
             if index_name in existing_indexes:
                 continue
             if not set(column_names).issubset(existing_columns):
+                continue
+            if _has_duplicate_natural_keys(conn, table_name, column_names):
                 continue
             joined = ", ".join(column_names)
             conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({joined})"))

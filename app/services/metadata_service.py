@@ -106,6 +106,27 @@ def _deactivate_missing_tables(db, ds_id: int, schema: str, seen_table_names: se
         table.dropped_at = now
         changes["tables_deactivated"] += 1
         _add_change_sample(changes, "table_deactivated", f"{schema}.{table.table_name}")
+        for column in table.columns:
+            if not column.is_active:
+                continue
+            column.is_active = False
+            column.dropped_at = now
+            changes["columns_deactivated"] += 1
+            _add_change_sample(changes, "column_deactivated", f"{schema}.{table.table_name}.{column.column_name}")
+        for index in table.indexes:
+            if not index.is_active:
+                continue
+            index.is_active = False
+            index.dropped_at = now
+            changes["indexes_deactivated"] += 1
+            _add_change_sample(changes, "index_deactivated", f"{schema}.{table.table_name}.{index.index_name}")
+        for constraint in table.constraints:
+            if not constraint.is_active:
+                continue
+            constraint.is_active = False
+            constraint.dropped_at = now
+            changes["constraints_deactivated"] += 1
+            _add_change_sample(changes, "constraint_deactivated", f"{schema}.{table.table_name}.{constraint.constraint_name}")
 
 
 def _mark_missing_inactive(
