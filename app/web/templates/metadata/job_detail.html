@@ -64,6 +64,57 @@
                 </div>
             </div>
         </div>
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-white"><span class="fw-bold">变更摘要</span></div>
+            <div class="card-body">
+                <div class="row text-center small">
+                    <div class="col-6 col-md-3 mb-3">
+                        <div class="stat-number">{{ job.tables_added_count }}</div>
+                        <div class="stat-label">新增表</div>
+                    </div>
+                    <div class="col-6 col-md-3 mb-3">
+                        <div class="stat-number">{{ job.tables_deactivated_count }}</div>
+                        <div class="stat-label">下线表</div>
+                    </div>
+                    <div class="col-6 col-md-3 mb-3">
+                        <div class="stat-number">{{ job.columns_added_count }}</div>
+                        <div class="stat-label">新增字段</div>
+                    </div>
+                    <div class="col-6 col-md-3 mb-3">
+                        <div class="stat-number">{{ job.columns_deactivated_count }}</div>
+                        <div class="stat-label">下线字段</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-number">{{ job.columns_type_changed_count }}</div>
+                        <div class="stat-label">类型变化</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-number">{{ job.columns_comment_changed_count }}</div>
+                        <div class="stat-label">注释变化</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-number">{{ job.indexes_deactivated_count }}</div>
+                        <div class="stat-label">下线索引</div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="stat-number">{{ job.constraints_deactivated_count }}</div>
+                        <div class="stat-label">下线约束</div>
+                    </div>
+                </div>
+                {% if change_summary.samples %}
+                <hr>
+                <ul class="small mb-0">
+                    {% for sample in change_summary.samples[:20] %}
+                    <li><code>{{ sample.kind }}</code> {{ sample.path }}</li>
+                    {% endfor %}
+                </ul>
+                {% elif change_summary.raw %}
+                <pre class="bg-light border rounded p-3 small mb-0">{{ change_summary.raw }}</pre>
+                {% else %}
+                <p class="text-muted small mb-0">本次任务没有记录结构变化明细。</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 

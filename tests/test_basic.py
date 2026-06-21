@@ -2551,3 +2551,51 @@ def test_metadata_job_detail_page_shows_error_details(client):
     assert "任务详情数据源" in resp.text
     assert "连接失败" in resp.text
     assert "DPY-6005" in resp.text
+
+
+def test_metadata_job_detail_page_shows_change_summary(client):
+    """任务详情页展示变更摘要统计。"""
+    import json
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "变更摘要数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            tables_count=1,
+            columns_count=2,
+            tables_added_count=1,
+            columns_added_count=2,
+            columns_type_changed_count=1,
+            change_summary=json.dumps(
+                {"samples": [{"kind": "column_type_changed", "path": "DWHRPT.T_ORDER.ORDER_ID"}]},
+                ensure_ascii=False,
+            ),
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "变更摘要" in resp.text
+    assert "新增表" in resp.text
+    assert "新增字段" in resp.text
+    assert "类型变化" in resp.text
+    assert "DWHRPT.T_ORDER.ORDER_ID" in resp.text

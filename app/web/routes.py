@@ -1,5 +1,7 @@
 """Web UI 页面路由"""
 
+import json
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -160,7 +162,17 @@ def metadata_job_detail(request: Request, job_id: int):
         if not job:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/web/metadata/jobs")
-        return templates.TemplateResponse(request, "metadata/job_detail.html", {"request": request, "job": job})
+        change_summary = {}
+        if job.change_summary:
+            try:
+                change_summary = json.loads(job.change_summary)
+            except json.JSONDecodeError:
+                change_summary = {"raw": job.change_summary, "samples": []}
+        return templates.TemplateResponse(
+            request,
+            "metadata/job_detail.html",
+            {"request": request, "job": job, "change_summary": change_summary},
+        )
     finally:
         db.close()
 
