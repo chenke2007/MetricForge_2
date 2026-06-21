@@ -2599,3 +2599,102 @@ def test_metadata_job_detail_page_shows_change_summary(client):
     assert "新增字段" in resp.text
     assert "类型变化" in resp.text
     assert "DWHRPT.T_ORDER.ORDER_ID" in resp.text
+
+
+def test_metadata_job_detail_page_handles_malformed_change_summary(client):
+    """任务详情页容错展示异常变更摘要。"""
+    import json
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "异常摘要数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        bad_json_job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            change_summary="{bad json",
+        )
+        wrong_samples_job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            change_summary=json.dumps({"samples": {"kind": "x", "path": "y"}}, ensure_ascii=False),
+        )
+        db.add_all([bad_json_job, wrong_samples_job])
+        db.commit()
+        db.refresh(bad_json_job)
+        db.refresh(wrong_samples_job)
+        bad_json_job_id = bad_json_job.id
+        wrong_samples_job_id = wrong_samples_job.id
+    finally:
+        db.close()
+
+    bad_json_resp = client.get(f"/web/metadata/jobs/{bad_json_job_id}")
+    wrong_samples_resp = client.get(f"/web/metadata/jobs/{wrong_samples_job_id}")
+
+    assert bad_json_resp.status_code == 200
+    assert "{bad json" in bad_json_resp.text
+    assert wrong_samples_resp.status_code == 200
+    assert "本次任务没有记录结构变化明细。" in wrong_samples_resp.text
+
+
+def test_metadata_job_detail_page_escapes_change_summary_text(client):
+    """任务详情页转义变更摘要文本。"""
+    import json
+
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "摘要转义数据源",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "readonly",
+            "ds_type": "oracle",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        samples_job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            change_summary=json.dumps(
+                {"samples": [{"kind": "column_added", "path": "<script>alert(1)</script>"}]},
+                ensure_ascii=False,
+            ),
+        )
+        raw_job = MetadataCollectionJob(
+            datasource_id=ds_id,
+            status="success",
+            triggered_by="pytest",
+            change_summary="<script>alert(1)</script>",
+        )
+        db.add_all([samples_job, raw_job])
+        db.commit()
+        db.refresh(samples_job)
+        db.refresh(raw_job)
+        samples_job_id = samples_job.id
+        raw_job_id = raw_job.id
+    finally:
+        db.close()
+
+    samples_resp = client.get(f"/web/metadata/jobs/{samples_job_id}")
+    raw_resp = client.get(f"/web/metadata/jobs/{raw_job_id}")
+
+    assert samples_resp.status_code == 200
+    assert raw_resp.status_code == 200
+    assert "<script>alert(1)</script>" not in samples_resp.text
+    assert "<script>alert(1)</script>" not in raw_resp.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in samples_resp.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in raw_resp.text

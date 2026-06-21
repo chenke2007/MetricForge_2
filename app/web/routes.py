@@ -25,6 +25,21 @@ template_dir = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(template_dir))
 
 
+def _parse_change_summary(raw_summary: str | None) -> dict:
+    if not raw_summary:
+        return {"samples": []}
+    try:
+        parsed = json.loads(raw_summary)
+    except json.JSONDecodeError:
+        return {"raw": raw_summary, "samples": []}
+    if not isinstance(parsed, dict):
+        return {"raw": raw_summary, "samples": []}
+    samples = parsed.get("samples")
+    if not isinstance(samples, list):
+        parsed["samples"] = []
+    return parsed
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
     """系统概览仪表盘"""
@@ -162,12 +177,7 @@ def metadata_job_detail(request: Request, job_id: int):
         if not job:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/web/metadata/jobs")
-        change_summary = {}
-        if job.change_summary:
-            try:
-                change_summary = json.loads(job.change_summary)
-            except json.JSONDecodeError:
-                change_summary = {"raw": job.change_summary, "samples": []}
+        change_summary = _parse_change_summary(job.change_summary)
         return templates.TemplateResponse(
             request,
             "metadata/job_detail.html",
