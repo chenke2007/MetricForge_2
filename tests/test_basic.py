@@ -3717,3 +3717,79 @@ def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
     assert ds.metadata_schedule_enabled is False
     assert ds.metadata_schedule_interval_minutes == 10
     assert ds.metadata_next_run_at is None
+
+
+def test_dwhrpt_smoke_dry_run_reports_missing_datasource(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    class FakeQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return None
+
+    class FakeSession:
+        def query(self, _model):
+            return FakeQuery()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "dwhrpt datasource not found" in captured.out
+    assert '"datasource_name": "dwhrpt"' in captured.out
+
+
+def test_dwhrpt_smoke_dry_run_existing_datasource_does_not_execute(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=7,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        service_name="ORCLPDB1",
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+    )
+
+    class FakeQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        committed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            pass
+
+    session = FakeSession()
+    monkeypatch.setattr(smoke, "get_session", lambda: session)
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=False: (_ for _ in ()).throw(AssertionError("should not execute")))
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert '"dry_run": true' in captured.out
+    assert '"password_enc"' not in captured.out
+    assert '"host": "10.10.10.10"' in captured.out
+    assert session.committed is False
