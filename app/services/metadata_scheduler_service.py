@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from ..models import DatasourceConfig, get_session
 from .metadata_job_service import create_metadata_collection_job, execute_metadata_collection_job
-from .metadata_schedule_service import calculate_next_run_at, utc_now
+from .metadata_schedule_service import MIN_METADATA_SCHEDULE_INTERVAL_MINUTES, calculate_next_run_at, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +67,10 @@ def run_metadata_scheduler_tick(now: datetime | None = None, execute_jobs: bool 
 
         for ds in due_datasources:
             try:
-                if ds.metadata_schedule_interval_minutes < 30:
+                if ds.metadata_schedule_interval_minutes < MIN_METADATA_SCHEDULE_INTERVAL_MINUTES:
                     ds.metadata_last_schedule_status = "skipped"
                     ds.metadata_last_scheduled_at = now
+                    ds.metadata_next_run_at = now + timedelta(minutes=MIN_METADATA_SCHEDULE_INTERVAL_MINUTES)
                     result["skipped"] += 1
                     continue
 
@@ -88,7 +89,7 @@ def run_metadata_scheduler_tick(now: datetime | None = None, execute_jobs: bool 
                 logger.exception("Metadata scheduler tick failed for datasource %s", ds.id)
                 ds.metadata_last_schedule_status = "failed"
                 ds.metadata_last_scheduled_at = now
-                ds.metadata_next_run_at = now + timedelta(minutes=30)
+                ds.metadata_next_run_at = now + timedelta(minutes=MIN_METADATA_SCHEDULE_INTERVAL_MINUTES)
                 result["failed"] += 1
 
         db.commit()

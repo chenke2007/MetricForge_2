@@ -2994,6 +2994,46 @@ def test_metadata_scheduler_tick_skips_not_due_datasources(db_session, monkeypat
     assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
 
 
+def test_metadata_scheduler_tick_skipped_invalid_interval_advances_retry(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler invalid interval datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=10,
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fail_create_metadata_collection_job(_datasource_id, triggered_by="web"):
+        raise AssertionError("invalid interval datasource should not create a job")
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fail_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 0, "reused_running": 0, "skipped": 1, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "skipped"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule
