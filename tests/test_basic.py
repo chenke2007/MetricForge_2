@@ -2867,6 +2867,133 @@ def test_calculate_next_metadata_run_at_strict_future_advances_exact_boundary():
     assert calculate_next_run_at(now, 1440, "02:30", strict_future=True) == datetime(2026, 6, 23, 2, 30, 0)
 
 
+def test_metadata_scheduler_tick_creates_due_scheduler_job(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 2, 30, 0)
+    ds = DatasourceConfig(
+        name="scheduler due datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    created_for = []
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        created_for.append((datasource_id, triggered_by))
+        return {"id": 901, "reused_running_job": False}
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [901]}
+    assert created_for == [(ds_id, "scheduler")]
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "created"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 23, 2, 30, 0)
+
+
+def test_metadata_scheduler_tick_reuses_running_job(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler running datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        assert datasource_id == ds_id
+        assert triggered_by == "scheduler"
+        return {"id": 902, "reused_running_job": True}
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 0, "reused_running": 1, "skipped": 0, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "reused_running"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 11, 0, 0)
+
+
+def test_metadata_scheduler_tick_skips_not_due_datasources(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler future datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_next_run_at=datetime(2026, 6, 22, 10, 30, 0),
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fail_create_metadata_collection_job(_datasource_id, triggered_by="web"):
+        raise AssertionError("not-due datasource should not create a job")
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fail_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 0, "created": 0, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status is None
+    assert ds.metadata_last_scheduled_at is None
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule
