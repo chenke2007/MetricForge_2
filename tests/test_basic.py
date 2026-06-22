@@ -3300,6 +3300,88 @@ def test_create_app_starts_metadata_scheduler_when_enabled(monkeypatch, tmp_path
     assert stopped["called"] is True
 
 
+def test_datasource_detail_page_shows_metadata_schedule(client):
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "schedule page",
+            "ds_type": "oracle",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "u",
+            "metadata_schedule_enabled": True,
+            "metadata_schedule_interval_minutes": 1440,
+            "metadata_schedule_time": "02:00",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        ds = db.query(DatasourceConfig).filter(DatasourceConfig.id == ds_id).one()
+        ds.metadata_last_schedule_status = "created"
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/datasources/{ds_id}")
+
+    assert resp.status_code == 200
+    assert "自动采集" in resp.text
+    assert "02:00" in resp.text
+    assert "created" in resp.text
+
+
+def test_metadata_job_detail_page_shows_governance_ticket_count(client):
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="success",
+            triggered_by="scheduler",
+            governance_tickets_created_count=3,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "治理待办" in resp.text
+    assert "3" in resp.text
+    assert "source=metadata_change_detected" in resp.text
+
+
+def test_governance_page_filters_by_source(client):
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "metadata_table_deactivated",
+            "title": "metadata ticket",
+            "source": "metadata_change_detected",
+        },
+    )
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "missing_semantic",
+            "title": "semantic ticket",
+            "source": "auto_detect",
+        },
+    )
+
+    resp = client.get("/web/governance?source=metadata_change_detected")
+
+    assert resp.status_code == 200
+    assert "metadata ticket" in resp.text
+    assert "semantic ticket" not in resp.text
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule

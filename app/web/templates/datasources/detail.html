@@ -36,6 +36,43 @@
                 </dl>
             </div>
         </div>
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-white"><span class="fw-bold">自动采集</span></div>
+            <div class="card-body small">
+                <dl class="row mb-3">
+                    <dt class="col-sm-4">状态</dt>
+                    <dd class="col-sm-8">{{ '已启用' if ds.metadata_schedule_enabled else '未启用' }}</dd>
+                    <dt class="col-sm-4">频率</dt>
+                    <dd class="col-sm-8">每 {{ ds.metadata_schedule_interval_minutes }} 分钟</dd>
+                    <dt class="col-sm-4">固定时间</dt>
+                    <dd class="col-sm-8">{{ ds.metadata_schedule_time or '按间隔执行' }}</dd>
+                    <dt class="col-sm-4">上次调度</dt>
+                    <dd class="col-sm-8">{{ ds.metadata_last_scheduled_at.strftime('%Y-%m-%d %H:%M') if ds.metadata_last_scheduled_at else '-' }}</dd>
+                    <dt class="col-sm-4">下次调度</dt>
+                    <dd class="col-sm-8">{{ ds.metadata_next_run_at.strftime('%Y-%m-%d %H:%M') if ds.metadata_next_run_at else '-' }}</dd>
+                    <dt class="col-sm-4">最近状态</dt>
+                    <dd class="col-sm-8">{{ ds.metadata_last_schedule_status or '-' }}</dd>
+                </dl>
+                <form id="scheduleForm" class="row g-2">
+                    <div class="col-md-3">
+                        <select name="enabled" class="form-select form-select-sm">
+                            <option value="true" {% if ds.metadata_schedule_enabled %}selected{% endif %}>启用</option>
+                            <option value="false" {% if not ds.metadata_schedule_enabled %}selected{% endif %}>禁用</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" name="interval_minutes" class="form-control form-control-sm" min="30" value="{{ ds.metadata_schedule_interval_minutes }}">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="time" name="schedule_time" class="form-control form-control-sm" value="{{ ds.metadata_schedule_time or '' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-sm btn-outline-primary w-100">保存自动采集</button>
+                    </div>
+                    <div class="col-12"><span id="scheduleResult"></span></div>
+                </form>
+            </div>
+        </div>
     </div>
     <div class="col-md-4">
         <div class="card shadow-sm">
@@ -133,6 +170,21 @@ const POLL_INTERVAL_MS = 2000;
 const MAX_COLLECTION_POLLS = 150;
 
 document.getElementById('collectMetadataBtn')?.addEventListener('click', collectMetadata);
+
+document.getElementById('scheduleForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    const params = new URLSearchParams(fd);
+    const resultEl = document.getElementById('scheduleResult');
+    const resp = await fetch('/api/datasources/{{ ds.id }}/metadata-schedule?' + params.toString(), { method: 'PUT' });
+    if (resp.ok) {
+        resultEl.innerHTML = '<span class="text-success">已保存</span>';
+        window.setTimeout(() => window.location.reload(), 600);
+    } else {
+        const err = await resp.json();
+        resultEl.innerHTML = '<span class="text-danger">' + (err.detail || '保存失败') + '</span>';
+    }
+});
 
 function setStatusMessage(target, tone, iconClass, textParts, linkHref) {
     target.replaceChildren();
