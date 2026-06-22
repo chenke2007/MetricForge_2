@@ -1,5 +1,6 @@
 """Application entry point."""
 
+from contextlib import asynccontextmanager
 import os
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from fastapi.responses import RedirectResponse
 
 from .config import loader as config_loader
 from .models import init_db, init_tables
+from .services.metadata_scheduler_runtime import start_metadata_scheduler, stop_metadata_scheduler
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/metricforge.db"
@@ -39,7 +41,15 @@ def _resolve_database_url(database_url: str | None = None, config_path: str | No
 
 def create_app(config_path: str | None = None, database_url: str | None = None) -> FastAPI:
     """Application factory."""
-    app = FastAPI(title="MetricForge", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        start_metadata_scheduler(app)
+        try:
+            yield
+        finally:
+            stop_metadata_scheduler(app)
+
+    app = FastAPI(title="MetricForge", version="0.1.0", lifespan=lifespan)
 
     db_url = _resolve_database_url(database_url=database_url, config_path=config_path)
     init_db(db_url)

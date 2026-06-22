@@ -3259,6 +3259,47 @@ def test_governance_api_filters_by_source(client):
     assert data[0]["source"] == "metadata_change_detected"
 
 
+def test_metadata_scheduler_runtime_respects_disabled_env(monkeypatch):
+    from fastapi import FastAPI
+
+    from app.services.metadata_scheduler_runtime import start_metadata_scheduler
+
+    monkeypatch.setenv("METADATA_SCHEDULER_ENABLED", "0")
+    app = FastAPI()
+
+    started = start_metadata_scheduler(app)
+
+    assert started is False
+    assert getattr(app.state, "metadata_scheduler_thread", None) is None
+
+
+def test_create_app_starts_metadata_scheduler_when_enabled(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    started = {"called": False}
+    stopped = {"called": False}
+
+    def fake_start(app):
+        started["called"] = True
+        return True
+
+    def fake_stop(app):
+        stopped["called"] = True
+
+    monkeypatch.setenv("METADATA_SCHEDULER_ENABLED", "1")
+    monkeypatch.setattr("app.main.start_metadata_scheduler", fake_start)
+    monkeypatch.setattr("app.main.stop_metadata_scheduler", fake_stop)
+
+    db_path = tmp_path / "scheduler-start.db"
+    with TestClient(create_app(database_url=f"sqlite:///{db_path}")):
+        pass
+
+    assert started["called"] is True
+    assert stopped["called"] is True
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule
