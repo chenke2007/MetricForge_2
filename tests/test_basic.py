@@ -3195,6 +3195,70 @@ def test_execute_metadata_collection_job_records_governance_ticket_count(app, mo
     assert json.loads(result["change_summary"])["columns_type_changed"] == 1
 
 
+def test_datasource_api_updates_metadata_schedule(client):
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "api schedule",
+            "ds_type": "oracle",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "u",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    resp = client.put(f"/api/datasources/{ds_id}/metadata-schedule?enabled=true&interval_minutes=60&schedule_time=02:00")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["metadata_schedule_enabled"] is True
+    assert data["metadata_schedule_interval_minutes"] == 60
+    assert data["metadata_schedule_time"] == "02:00"
+    assert data["metadata_next_run_at"] is not None
+
+
+def test_metadata_scheduler_tick_api_returns_scan_counts(client, monkeypatch):
+    from app.api import metadata as metadata_api
+
+    monkeypatch.setattr(
+        metadata_api,
+        "run_metadata_scheduler_tick",
+        lambda execute_jobs=False: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [1]},
+    )
+
+    resp = client.post("/api/metadata/scheduler/tick")
+
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1
+
+
+def test_governance_api_filters_by_source(client):
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "metadata_table_deactivated",
+            "title": "metadata",
+            "source": "metadata_change_detected",
+        },
+    )
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "missing_semantic",
+            "title": "semantic",
+            "source": "auto_detect",
+        },
+    )
+
+    resp = client.get("/api/governance/?source=metadata_change_detected")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["source"] == "metadata_change_detected"
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..models import DatasourceConfig, get_session
+from ..services.metadata_schedule_service import serialize_metadata_schedule, update_metadata_schedule
 
 router = APIRouter()
 
@@ -15,6 +16,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _metadata_schedule_api_fields(ds: DatasourceConfig) -> dict:
+    schedule = serialize_metadata_schedule(ds)
+    return {
+        **schedule,
+        "metadata_schedule_enabled": schedule["enabled"],
+        "metadata_schedule_interval_minutes": schedule["interval_minutes"],
+        "metadata_schedule_time": schedule["schedule_time"],
+        "metadata_next_run_at": schedule["next_run_at"],
+        "metadata_last_scheduled_at": schedule["last_scheduled_at"],
+        "metadata_last_schedule_status": schedule["last_schedule_status"],
+    }
 
 
 @router.post("/test-connection")
@@ -69,6 +83,7 @@ def list_datasources(db: Session = Depends(get_db)):
             "schema_names": ds.schema_names,
             "is_active": ds.is_active,
             "created_at": str(ds.created_at),
+            **_metadata_schedule_api_fields(ds),
         }
         for ds in dses
     ]
@@ -93,6 +108,7 @@ def get_datasource(ds_id: int, db: Session = Depends(get_db)):
         "is_active": ds.is_active,
         "created_at": str(ds.created_at),
         "updated_at": str(ds.updated_at),
+        **_metadata_schedule_api_fields(ds),
     }
 
 
@@ -107,6 +123,9 @@ def create_datasource(
     password: str = Query(None, description="密码（明文，将由后端加密）"),
     dialect: str = Query("oracle", description="SQL 方言"),
     schema_names: str = Query(None, description="关注 Schema（逗号分隔）"),
+    metadata_schedule_enabled: bool = Query(False, description="Enable automatic metadata collection"),
+    metadata_schedule_interval_minutes: int = Query(1440, description="Metadata collection interval in minutes"),
+    metadata_schedule_time: str = Query(None, description="Daily fixed collection time HH:MM"),
     db: Session = Depends(get_db),
 ):
     """创建数据源（阶段1：密码明文接收，后续接入加密）"""
@@ -120,11 +139,54 @@ def create_datasource(
         password_enc=password,  # TODO: 接入 cryptography.fernet 加密
         dialect=dialect,
         schema_names=schema_names,
+        metadata_schedule_enabled=metadata_schedule_enabled,
+        metadata_schedule_interval_minutes=metadata_schedule_interval_minutes,
+        metadata_schedule_time=metadata_schedule_time,
     )
     db.add(ds)
-    db.commit()
-    db.refresh(ds)
+    try:
+        db.flush()
+        if metadata_schedule_enabled:
+            update_metadata_schedule(
+                ds.id,
+                {
+                    "enabled": metadata_schedule_enabled,
+                    "interval_minutes": metadata_schedule_interval_minutes,
+                    "schedule_time": metadata_schedule_time,
+                },
+                db=db,
+            )
+        db.commit()
+        db.refresh(ds)
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     return {"id": ds.id, "message": "数据源创建成功"}
+
+
+@router.put("/{ds_id}/metadata-schedule")
+def update_datasource_metadata_schedule(
+    ds_id: int,
+    enabled: bool = Query(..., description="Enable automatic metadata collection"),
+    interval_minutes: int = Query(1440, description="Metadata collection interval in minutes"),
+    schedule_time: str = Query(None, description="Daily fixed collection time HH:MM"),
+):
+    try:
+        schedule = update_metadata_schedule(
+            ds_id,
+            {"enabled": enabled, "interval_minutes": interval_minutes, "schedule_time": schedule_time},
+        )
+        return {
+            **schedule,
+            "metadata_schedule_enabled": schedule["enabled"],
+            "metadata_schedule_interval_minutes": schedule["interval_minutes"],
+            "metadata_schedule_time": schedule["schedule_time"],
+            "metadata_next_run_at": schedule["next_run_at"],
+            "metadata_last_scheduled_at": schedule["last_scheduled_at"],
+            "metadata_last_schedule_status": schedule["last_schedule_status"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{ds_id}")
