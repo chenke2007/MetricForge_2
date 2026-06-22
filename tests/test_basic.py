@@ -2856,12 +2856,33 @@ def test_calculate_next_metadata_run_at_uses_daily_exact_boundary():
     assert calculate_next_run_at(now, 1440, "02:30") == datetime(2026, 6, 22, 2, 30, 0)
 
 
+def test_calculate_next_metadata_run_at_strict_future_advances_exact_boundary():
+    """strict_future=True 时，固定时间等于当前时间会推进到次日。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 2, 30, 0)
+
+    assert calculate_next_run_at(now, 1440, "02:30", strict_future=True) == datetime(2026, 6, 23, 2, 30, 0)
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule
 
     assert validate_schedule(False, None, " ") == (False, 1440, None)
     assert validate_schedule(False, 10, None) == (False, 10, None)
+
+
+def test_validate_metadata_schedule_rejects_unknown_bool_string():
+    """布尔字符串必须是明确的 true/false 值。"""
+    import pytest
+
+    from app.services.metadata_schedule_service import validate_schedule
+
+    with pytest.raises(ValueError, match="布尔"):
+        validate_schedule("definitely-not-bool", 60, None)
 
 
 def test_metadata_schedule_utc_now_returns_naive_datetime():

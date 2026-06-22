@@ -19,7 +19,12 @@ def utc_now() -> datetime:
 
 def _parse_bool(value: object) -> bool:
     if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
+        normalized_value = value.strip().lower()
+        if normalized_value in {"1", "true", "yes", "on"}:
+            return True
+        if normalized_value in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError("布尔配置值必须为 true/false")
     return bool(value)
 
 
@@ -55,12 +60,18 @@ def validate_schedule(
     return normalized_enabled, normalized_interval, normalized_schedule_time
 
 
-def calculate_next_run_at(from_time: datetime, interval_minutes: int, schedule_time: str | None = None) -> datetime:
+def calculate_next_run_at(
+    from_time: datetime,
+    interval_minutes: int,
+    schedule_time: str | None = None,
+    *,
+    strict_future: bool = False,
+) -> datetime:
     _, interval_minutes, schedule_time = validate_schedule(True, interval_minutes, schedule_time)
     if schedule_time:
         hour, minute = [int(part) for part in schedule_time.split(":", 1)]
         candidate = from_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if candidate < from_time:
+        if candidate < from_time or (strict_future and candidate == from_time):
             candidate = candidate + timedelta(days=1)
         return candidate
     return from_time + timedelta(minutes=interval_minutes)
