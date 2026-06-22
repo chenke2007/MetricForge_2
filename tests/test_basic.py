@@ -2817,3 +2817,52 @@ def test_metadata_job_detail_page_escapes_change_summary_text(client):
     assert "<script>alert(1)</script>" not in raw_resp.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in samples_resp.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in raw_resp.text
+
+
+def test_calculate_next_metadata_run_at_uses_interval():
+    """未配置固定时间时，下一次运行时间按间隔推进。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 10, 0, 0)
+
+    assert calculate_next_run_at(now, 90, None) == datetime(2026, 6, 22, 11, 30, 0)
+
+
+def test_calculate_next_metadata_run_at_uses_daily_time():
+    """配置固定时间时，优先计算下一个每日固定执行点。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    morning = datetime(2026, 6, 22, 1, 0, 0)
+    afternoon = datetime(2026, 6, 22, 15, 0, 0)
+
+    assert calculate_next_run_at(morning, 1440, "02:30") == datetime(2026, 6, 22, 2, 30, 0)
+    assert calculate_next_run_at(afternoon, 1440, "02:30") == datetime(2026, 6, 23, 2, 30, 0)
+
+
+def test_update_metadata_schedule_validates_min_interval_and_time(db_session):
+    """自动采集配置会校验最小间隔和 HH:MM 时间格式。"""
+    import pytest
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule validation",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="至少 30 分钟"):
+        update_metadata_schedule(ds.id, True, 10, None, db=db_session)
+
+    with pytest.raises(ValueError, match="HH:MM"):
+        update_metadata_schedule(ds.id, True, 60, "25:99", db=db_session)
