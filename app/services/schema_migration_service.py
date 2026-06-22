@@ -4,6 +4,14 @@ from sqlalchemy import inspect, text
 
 
 METADATA_COLUMNS = {
+    "datasource_config": [
+        ("metadata_schedule_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("metadata_schedule_interval_minutes", "INTEGER NOT NULL DEFAULT 1440"),
+        ("metadata_schedule_time", "VARCHAR(5)"),
+        ("metadata_next_run_at", "DATETIME"),
+        ("metadata_last_scheduled_at", "DATETIME"),
+        ("metadata_last_schedule_status", "VARCHAR(30)"),
+    ],
     "table_metadata": [
         ("is_active", "BOOLEAN NOT NULL DEFAULT 1"),
         ("first_collected_at", "DATETIME"),
@@ -43,6 +51,7 @@ METADATA_COLUMNS = {
         ("indexes_deactivated_count", "INTEGER NOT NULL DEFAULT 0"),
         ("constraints_added_count", "INTEGER NOT NULL DEFAULT 0"),
         ("constraints_deactivated_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("governance_tickets_created_count", "INTEGER NOT NULL DEFAULT 0"),
         ("change_summary", "TEXT"),
     ],
 }

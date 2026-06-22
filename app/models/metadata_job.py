@@ -39,6 +39,7 @@ class MetadataCollectionJob(Base):
     indexes_deactivated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="下线索引数量")
     constraints_added_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="新增约束数量")
     constraints_deactivated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="下线约束数量")
+    governance_tickets_created_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="本次生成治理待办数量")
     change_summary: Mapped[str] = mapped_column(Text, nullable=True, comment="变更摘要 JSON")
     error_message: Mapped[str] = mapped_column(Text, nullable=True, comment="错误摘要")
     error_details: Mapped[str] = mapped_column(Text, nullable=True, comment="错误详情")

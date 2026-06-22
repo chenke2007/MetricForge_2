@@ -608,6 +608,31 @@ def test_metadata_job_model_includes_change_summary_fields(db_session):
     } <= columns
 
 
+def test_datasource_model_includes_metadata_schedule_fields(db_session):
+    """数据源模型包含自动元数据采集调度字段。"""
+    from sqlalchemy import inspect
+
+    columns = {col["name"] for col in inspect(db_session.bind).get_columns("datasource_config")}
+
+    assert {
+        "metadata_schedule_enabled",
+        "metadata_schedule_interval_minutes",
+        "metadata_schedule_time",
+        "metadata_next_run_at",
+        "metadata_last_scheduled_at",
+        "metadata_last_schedule_status",
+    } <= columns
+
+
+def test_metadata_job_model_includes_governance_ticket_count(db_session):
+    """采集任务模型记录本次自动生成的治理待办数量。"""
+    from sqlalchemy import inspect
+
+    columns = {col["name"] for col in inspect(db_session.bind).get_columns("metadata_collection_job")}
+
+    assert "governance_tickets_created_count" in columns
+
+
 def test_init_tables_adds_metadata_refresh_columns_to_existing_database(tmp_path):
     """已有 SQLite 库初始化时会补齐稳定刷新字段。"""
     from sqlalchemy import create_engine, inspect, text
@@ -640,6 +665,60 @@ def test_init_tables_adds_metadata_refresh_columns_to_existing_database(tmp_path
 
     columns = {col["name"] for col in inspect(create_engine(f"sqlite:///{db_path}")).get_columns("table_metadata")}
     assert {"is_active", "first_collected_at", "last_collected_at", "dropped_at"} <= columns
+
+
+def test_schema_migration_adds_metadata_schedule_columns_to_existing_database(tmp_path):
+    """已有 SQLite 库初始化时会补齐自动采集调度字段。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.models import init_db, init_tables
+
+    db_path = tmp_path / "legacy-schedule.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE datasource_config (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                ds_type VARCHAR(50) NOT NULL,
+                host VARCHAR(255) NOT NULL,
+                port INTEGER NOT NULL,
+                username VARCHAR(100) NOT NULL,
+                dialect VARCHAR(50) NOT NULL,
+                is_active BOOLEAN
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE metadata_collection_job (
+                id INTEGER PRIMARY KEY,
+                datasource_id INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                triggered_by VARCHAR(100),
+                started_at DATETIME NOT NULL,
+                tables_count INTEGER NOT NULL DEFAULT 0,
+                columns_count INTEGER NOT NULL DEFAULT 0,
+                indexes_count INTEGER NOT NULL DEFAULT 0,
+                constraints_count INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+    engine.dispose()
+
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    inspector = inspect(create_engine(f"sqlite:///{db_path}"))
+    datasource_columns = {col["name"] for col in inspector.get_columns("datasource_config")}
+    job_columns = {col["name"] for col in inspector.get_columns("metadata_collection_job")}
+
+    assert {
+        "metadata_schedule_enabled",
+        "metadata_schedule_interval_minutes",
+        "metadata_schedule_time",
+        "metadata_next_run_at",
+        "metadata_last_scheduled_at",
+        "metadata_last_schedule_status",
+    } <= datasource_columns
+    assert "governance_tickets_created_count" in job_columns
 
 
 def test_schema_migration_creates_unique_indexes_on_existing_database(tmp_path):
