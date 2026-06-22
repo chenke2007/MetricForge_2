@@ -2829,6 +2829,7 @@ def test_calculate_next_metadata_run_at_uses_interval():
 
     assert calculate_next_run_at(now, 90, None) == datetime(2026, 6, 22, 11, 30, 0)
     assert calculate_next_run_at(now, 90) == datetime(2026, 6, 22, 11, 30, 0)
+    assert calculate_next_run_at(from_time=now, interval_minutes=90) == datetime(2026, 6, 22, 11, 30, 0)
 
 
 def test_calculate_next_metadata_run_at_uses_daily_time():
@@ -2861,6 +2862,33 @@ def test_validate_metadata_schedule_disabled_allows_incomplete_config():
 
     assert validate_schedule(False, None, " ") == (False, 1440, None)
     assert validate_schedule(False, 10, None) == (False, 10, None)
+
+
+def test_metadata_schedule_utc_now_returns_naive_datetime():
+    """utc_now 返回无时区信息的 datetime。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import utc_now
+
+    now = utc_now()
+
+    assert isinstance(now, datetime)
+    assert now.tzinfo is None
+
+
+def test_metadata_schedule_constants_and_time_regex_contract():
+    """自动采集调度常量和时间正则保持基础合同。"""
+    from app.services.metadata_schedule_service import (
+        DEFAULT_METADATA_SCHEDULE_INTERVAL_MINUTES,
+        MIN_METADATA_SCHEDULE_INTERVAL_MINUTES,
+        SCHEDULE_TIME_RE,
+    )
+
+    assert MIN_METADATA_SCHEDULE_INTERVAL_MINUTES == 30
+    assert DEFAULT_METADATA_SCHEDULE_INTERVAL_MINUTES == 1440
+    assert SCHEDULE_TIME_RE.match("02:30")
+    assert not SCHEDULE_TIME_RE.match("2:30")
+    assert not SCHEDULE_TIME_RE.match("02:3")
 
 
 def test_serialize_metadata_schedule_uses_short_contract_keys():
@@ -2971,6 +2999,136 @@ def test_update_metadata_schedule_accepts_payload_and_updates(db_session):
     assert ds.metadata_schedule_interval_minutes == 1440
     assert ds.metadata_schedule_time == "02:30"
     assert ds.metadata_next_run_at == datetime(2026, 6, 22, 2, 30, 0)
+
+
+def test_update_metadata_schedule_owned_session_commits_refreshes_and_closes(monkeypatch):
+    """自有 session 路径会提交、刷新并关闭。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services import metadata_schedule_service
+
+    ds = DatasourceConfig(
+        id=42,
+        name="owned schedule session",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.refreshed = None
+            self.closed = False
+            self.flushed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def flush(self):
+            self.flushed = True
+
+        def commit(self):
+            self.committed = True
+
+        def refresh(self, item):
+            self.refreshed = item
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            self.closed = True
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(metadata_schedule_service, "get_session", lambda: fake_session)
+
+    result = metadata_schedule_service.update_metadata_schedule(
+        42,
+        {"enabled": True, "interval_minutes": 90},
+        now=datetime(2026, 6, 22, 10, 0, 0),
+    )
+
+    assert result["next_run_at"] == "2026-06-22 11:30:00"
+    assert fake_session.flushed is True
+    assert fake_session.committed is True
+    assert fake_session.refreshed is ds
+    assert fake_session.closed is True
+
+
+def test_update_metadata_schedule_external_session_is_not_closed():
+    """传入外部 db 时不关闭外部 session。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        id=43,
+        name="external schedule session",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.refreshed = False
+            self.closed = False
+            self.flushed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def flush(self):
+            self.flushed = True
+
+        def commit(self):
+            self.committed = True
+
+        def refresh(self, _item):
+            self.refreshed = True
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            self.closed = True
+
+    fake_session = FakeSession()
+
+    result = update_metadata_schedule(
+        43,
+        {"metadata_schedule_enabled": True, "metadata_schedule_interval_minutes": 90},
+        db=fake_session,
+        now=datetime(2026, 6, 22, 10, 0, 0),
+    )
+
+    assert result["next_run_at"] == "2026-06-22 11:30:00"
+    assert fake_session.flushed is True
+    assert fake_session.committed is False
+    assert fake_session.refreshed is False
+    assert fake_session.closed is False
 
 
 def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):

@@ -55,15 +55,15 @@ def validate_schedule(
     return normalized_enabled, normalized_interval, normalized_schedule_time
 
 
-def calculate_next_run_at(now: datetime, interval_minutes: int, schedule_time: str | None = None) -> datetime:
+def calculate_next_run_at(from_time: datetime, interval_minutes: int, schedule_time: str | None = None) -> datetime:
     _, interval_minutes, schedule_time = validate_schedule(True, interval_minutes, schedule_time)
     if schedule_time:
         hour, minute = [int(part) for part in schedule_time.split(":", 1)]
-        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if candidate < now:
+        candidate = from_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate < from_time:
             candidate = candidate + timedelta(days=1)
         return candidate
-    return now + timedelta(minutes=interval_minutes)
+    return from_time + timedelta(minutes=interval_minutes)
 
 
 def serialize_metadata_schedule(ds: DatasourceConfig) -> dict:
