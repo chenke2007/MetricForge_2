@@ -11,6 +11,7 @@ from ..services.metadata_job_service import (
     run_metadata_collection_job,
     serialize_collection_job,
 )
+from ..services.metadata_scheduler_service import run_metadata_scheduler_tick
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,12 @@ def trigger_collection(
     except Exception as e:
         logger.exception("元数据采集异常")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scheduler/tick")
+def metadata_scheduler_tick():
+    """Run one metadata scheduler scan without executing created jobs."""
+    return run_metadata_scheduler_tick(execute_jobs=False)
 
 
 @router.post("/jobs/{datasource_id}")

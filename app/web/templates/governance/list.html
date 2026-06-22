@@ -7,16 +7,30 @@
         <h4 class="mb-1"><i class="bi bi-check2-square me-2"></i>治理待办</h4>
         <p class="text-muted small mb-0">指标缺失、字段语义不清、表关系不明等治理事项</p>
     </div>
-    <div>
-        <select class="form-select form-select-sm" onchange="window.location.href='?status='+this.value">
+    <div class="d-flex gap-2">
+        <select id="statusFilter" class="form-select form-select-sm" onchange="applyGovernanceFilters()">
             <option value="" {% if not current_status %}selected{% endif %}>全部状态</option>
             <option value="open" {% if current_status == 'open' %}selected{% endif %}>待处理</option>
             <option value="in_progress" {% if current_status == 'in_progress' %}selected{% endif %}>处理中</option>
             <option value="resolved" {% if current_status == 'resolved' %}selected{% endif %}>已解决</option>
             <option value="closed" {% if current_status == 'closed' %}selected{% endif %}>已关闭</option>
         </select>
+        <select id="sourceFilter" class="form-select form-select-sm" onchange="applyGovernanceFilters()">
+            <option value="" {% if not current_source %}selected{% endif %}>全部来源</option>
+            <option value="metadata_change_detected" {% if current_source == 'metadata_change_detected' %}selected{% endif %}>元数据变更</option>
+            <option value="auto_detect" {% if current_source == 'auto_detect' %}selected{% endif %}>自动检测</option>
+            <option value="manual_import" {% if current_source == 'manual_import' %}selected{% endif %}>手工录入</option>
+        </select>
     </div>
 </div>
+
+{% set type_labels = {
+    'metadata_table_deactivated': '表下线确认',
+    'metadata_column_deactivated': '字段下线确认',
+    'metadata_column_type_changed': '字段类型变化',
+    'metadata_column_comment_changed': '字段注释变化',
+    'missing_semantic': '缺失语义'
+} %}
 
 <div class="card shadow-sm">
     <div class="card-body p-0">
@@ -39,7 +53,7 @@
                 <tr>
                     <td class="text-muted">{{ t.id }}</td>
                     <td><a href="#" class="text-decoration-none" onclick="showTicket({{ t.id }});return false;">{{ t.title[:50] + '...' if t.title|length > 50 else t.title }}</a></td>
-                    <td><span class="badge bg-info">{{ t.ticket_type }}</span></td>
+                    <td><span class="badge bg-info">{{ type_labels.get(t.ticket_type, t.ticket_type) }}</span></td>
                     <td class="text-muted">{{ t.source }}</td>
                     <td>
                         {% if t.priority == 'high' %}<span class="badge bg-danger">高</span>
@@ -161,6 +175,20 @@
 </div>
 
 <script>
+function applyGovernanceFilters() {
+    const params = new URLSearchParams();
+    const status = document.getElementById('statusFilter')?.value;
+    const source = document.getElementById('sourceFilter')?.value;
+    if (status) {
+        params.set('status', status);
+    }
+    if (source) {
+        params.set('source', source);
+    }
+    const query = params.toString();
+    window.location.href = query ? '?' + query : '/web/governance';
+}
+
 let currentTicketId = null;
 let currentSemanticColumnId = null;
 

@@ -608,6 +608,31 @@ def test_metadata_job_model_includes_change_summary_fields(db_session):
     } <= columns
 
 
+def test_datasource_model_includes_metadata_schedule_fields(db_session):
+    """数据源模型包含自动元数据采集调度字段。"""
+    from sqlalchemy import inspect
+
+    columns = {col["name"] for col in inspect(db_session.bind).get_columns("datasource_config")}
+
+    assert {
+        "metadata_schedule_enabled",
+        "metadata_schedule_interval_minutes",
+        "metadata_schedule_time",
+        "metadata_next_run_at",
+        "metadata_last_scheduled_at",
+        "metadata_last_schedule_status",
+    } <= columns
+
+
+def test_metadata_job_model_includes_governance_ticket_count(db_session):
+    """采集任务模型记录本次自动生成的治理待办数量。"""
+    from sqlalchemy import inspect
+
+    columns = {col["name"] for col in inspect(db_session.bind).get_columns("metadata_collection_job")}
+
+    assert "governance_tickets_created_count" in columns
+
+
 def test_init_tables_adds_metadata_refresh_columns_to_existing_database(tmp_path):
     """已有 SQLite 库初始化时会补齐稳定刷新字段。"""
     from sqlalchemy import create_engine, inspect, text
@@ -640,6 +665,60 @@ def test_init_tables_adds_metadata_refresh_columns_to_existing_database(tmp_path
 
     columns = {col["name"] for col in inspect(create_engine(f"sqlite:///{db_path}")).get_columns("table_metadata")}
     assert {"is_active", "first_collected_at", "last_collected_at", "dropped_at"} <= columns
+
+
+def test_schema_migration_adds_metadata_schedule_columns_to_existing_database(tmp_path):
+    """已有 SQLite 库初始化时会补齐自动采集调度字段。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.models import init_db, init_tables
+
+    db_path = tmp_path / "legacy-schedule.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE datasource_config (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                ds_type VARCHAR(50) NOT NULL,
+                host VARCHAR(255) NOT NULL,
+                port INTEGER NOT NULL,
+                username VARCHAR(100) NOT NULL,
+                dialect VARCHAR(50) NOT NULL,
+                is_active BOOLEAN
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE metadata_collection_job (
+                id INTEGER PRIMARY KEY,
+                datasource_id INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                triggered_by VARCHAR(100),
+                started_at DATETIME NOT NULL,
+                tables_count INTEGER NOT NULL DEFAULT 0,
+                columns_count INTEGER NOT NULL DEFAULT 0,
+                indexes_count INTEGER NOT NULL DEFAULT 0,
+                constraints_count INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+    engine.dispose()
+
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    inspector = inspect(create_engine(f"sqlite:///{db_path}"))
+    datasource_columns = {col["name"] for col in inspector.get_columns("datasource_config")}
+    job_columns = {col["name"] for col in inspector.get_columns("metadata_collection_job")}
+
+    assert {
+        "metadata_schedule_enabled",
+        "metadata_schedule_interval_minutes",
+        "metadata_schedule_time",
+        "metadata_next_run_at",
+        "metadata_last_scheduled_at",
+        "metadata_last_schedule_status",
+    } <= datasource_columns
+    assert "governance_tickets_created_count" in job_columns
 
 
 def test_schema_migration_creates_unique_indexes_on_existing_database(tmp_path):
@@ -2738,3 +2817,903 @@ def test_metadata_job_detail_page_escapes_change_summary_text(client):
     assert "<script>alert(1)</script>" not in raw_resp.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in samples_resp.text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in raw_resp.text
+
+
+def test_calculate_next_metadata_run_at_uses_interval():
+    """未配置固定时间时，下一次运行时间按间隔推进。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 10, 0, 0)
+
+    assert calculate_next_run_at(now, 90, None) == datetime(2026, 6, 22, 11, 30, 0)
+    assert calculate_next_run_at(now, 90) == datetime(2026, 6, 22, 11, 30, 0)
+    assert calculate_next_run_at(from_time=now, interval_minutes=90) == datetime(2026, 6, 22, 11, 30, 0)
+
+
+def test_calculate_next_metadata_run_at_uses_daily_time():
+    """配置固定时间时，优先计算下一个每日固定执行点。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    morning = datetime(2026, 6, 22, 1, 0, 0)
+    afternoon = datetime(2026, 6, 22, 15, 0, 0)
+
+    assert calculate_next_run_at(morning, 1440, "02:30") == datetime(2026, 6, 22, 2, 30, 0)
+    assert calculate_next_run_at(afternoon, 1440, "02:30") == datetime(2026, 6, 23, 2, 30, 0)
+
+
+def test_calculate_next_metadata_run_at_uses_daily_exact_boundary():
+    """固定时间等于当前时间时，仍返回当天执行点。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 2, 30, 0)
+
+    assert calculate_next_run_at(now, 1440, "02:30") == datetime(2026, 6, 22, 2, 30, 0)
+
+
+def test_calculate_next_metadata_run_at_strict_future_advances_exact_boundary():
+    """strict_future=True 时，固定时间等于当前时间会推进到次日。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 2, 30, 0)
+
+    assert calculate_next_run_at(now, 1440, "02:30", strict_future=True) == datetime(2026, 6, 23, 2, 30, 0)
+
+
+def test_metadata_scheduler_tick_creates_due_scheduler_job(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 2, 30, 0)
+    ds = DatasourceConfig(
+        name="scheduler due datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    created_for = []
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        created_for.append((datasource_id, triggered_by))
+        return {"id": 901, "reused_running_job": False}
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [901]}
+    assert created_for == [(ds_id, "scheduler")]
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "created"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 23, 2, 30, 0)
+
+
+def test_metadata_scheduler_tick_reuses_running_job(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler running datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fake_create_metadata_collection_job(datasource_id, triggered_by="web"):
+        assert datasource_id == ds_id
+        assert triggered_by == "scheduler"
+        return {"id": 902, "reused_running_job": True}
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fake_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 0, "reused_running": 1, "skipped": 0, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "reused_running"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 11, 0, 0)
+
+
+def test_metadata_scheduler_tick_skips_not_due_datasources(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler future datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_next_run_at=datetime(2026, 6, 22, 10, 30, 0),
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fail_create_metadata_collection_job(_datasource_id, triggered_by="web"):
+        raise AssertionError("not-due datasource should not create a job")
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fail_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 0, "created": 0, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status is None
+    assert ds.metadata_last_scheduled_at is None
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
+
+
+def test_metadata_scheduler_tick_skipped_invalid_interval_advances_retry(db_session, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import metadata_scheduler_service
+
+    SchedulerSession = sessionmaker(bind=db_session.bind)
+    now = datetime(2026, 6, 22, 10, 0, 0)
+    ds = DatasourceConfig(
+        name="scheduler invalid interval datasource",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=10,
+        metadata_next_run_at=now,
+    )
+    db_session.add(ds)
+    db_session.commit()
+    ds_id = ds.id
+
+    def fail_create_metadata_collection_job(_datasource_id, triggered_by="web"):
+        raise AssertionError("invalid interval datasource should not create a job")
+
+    monkeypatch.setattr(metadata_scheduler_service, "get_session", SchedulerSession)
+    monkeypatch.setattr(metadata_scheduler_service, "create_metadata_collection_job", fail_create_metadata_collection_job)
+
+    result = metadata_scheduler_service.run_metadata_scheduler_tick(now=now)
+
+    assert result == {"checked": 1, "created": 0, "reused_running": 0, "skipped": 1, "failed": 0, "job_ids": []}
+    db_session.expire_all()
+    ds = db_session.get(DatasourceConfig, ds_id)
+    assert ds.metadata_last_schedule_status == "skipped"
+    assert ds.metadata_last_scheduled_at == now
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
+
+
+def test_generate_metadata_change_tickets_creates_column_type_ticket(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="change ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_ORDER")
+    db_session.add(table)
+    db_session.flush()
+    column = ColumnMetadata(table_id=table.id, column_name="ORDER_ID", column_type="VARCHAR2(30)")
+    db_session.add(column)
+    db_session.flush()
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "column_type_changed", "path": "DWHRPT.T_ORDER.ORDER_ID"}]}, ensure_ascii=False),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 1
+    ticket = db_session.query(GovernanceTicket).one()
+    assert ticket.ticket_type == "metadata_column_type_changed"
+    assert ticket.source == "metadata_change_detected"
+    assert ticket.related_object_type == "column"
+    assert ticket.related_object_id == column.id
+    assert ticket.priority == "high"
+
+
+def test_generate_metadata_change_tickets_is_idempotent_for_open_tickets(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="idem ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_ORDER")
+    db_session.add(table)
+    db_session.flush()
+    column = ColumnMetadata(table_id=table.id, column_name="OLD_CODE", column_type="VARCHAR2(20)", is_active=False)
+    db_session.add(column)
+    db_session.flush()
+    existing = GovernanceTicket(
+        ticket_type="metadata_column_deactivated",
+        title="column deactivated: DWHRPT.T_ORDER.OLD_CODE",
+        source="metadata_change_detected",
+        related_object_type="column",
+        related_object_id=column.id,
+        status="open",
+    )
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "column_deactivated", "path": "DWHRPT.T_ORDER.OLD_CODE"}]}, ensure_ascii=False),
+    )
+    db_session.add_all([existing, job])
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 0
+    assert result["skipped_existing"] == 1
+    assert db_session.query(GovernanceTicket).count() == 1
+
+
+def test_generate_metadata_change_tickets_creates_table_deactivated_ticket(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="table change ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_OLD", is_active=False)
+    db_session.add(table)
+    db_session.flush()
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "table_deactivated", "path": "DWHRPT.T_OLD"}]}, ensure_ascii=False),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 1
+    ticket = db_session.query(GovernanceTicket).one()
+    assert ticket.ticket_type == "metadata_table_deactivated"
+    assert ticket.related_object_type == "table"
+    assert ticket.related_object_id == table.id
+    assert ticket.priority == "high"
+
+
+def test_execute_metadata_collection_job_records_governance_ticket_count(app, monkeypatch):
+    import json
+
+    from app.services import metadata_job_service
+
+    def fake_collect_metadata(datasource_id, schemas=None):
+        return {
+            "success": True,
+            "stats": {
+                "tables": 1,
+                "columns": 1,
+                "indexes": 0,
+                "constraints": 0,
+                "errors": [],
+                "changes": {
+                    "tables_added": 0,
+                    "tables_updated": 0,
+                    "tables_deactivated": 0,
+                    "columns_added": 0,
+                    "columns_updated": 0,
+                    "columns_deactivated": 0,
+                    "columns_type_changed": 1,
+                    "columns_comment_changed": 0,
+                    "indexes_added": 0,
+                    "indexes_deactivated": 0,
+                    "constraints_added": 0,
+                    "constraints_deactivated": 0,
+                    "samples": [{"kind": "column_type_changed", "path": "DWHRPT.T_ORDER.ORDER_ID"}],
+                },
+            },
+        }
+
+    monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job governance ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(datasource_id=ds.id, status="running", triggered_by="scheduler")
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        metadata_job_service,
+        "generate_governance_tickets_for_job",
+        lambda job_id, db=None: {"created": 2, "skipped_existing": 0, "skipped_missing_object": 0, "skipped_unsupported": 0},
+    )
+
+    result = metadata_job_service.execute_metadata_collection_job(job_id)
+
+    assert result["status"] == "success"
+    assert result["governance_tickets_created_count"] == 2
+    assert json.loads(result["change_summary"])["columns_type_changed"] == 1
+
+
+def test_datasource_api_updates_metadata_schedule(client):
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "api schedule",
+            "ds_type": "oracle",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "u",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+
+    resp = client.put(f"/api/datasources/{ds_id}/metadata-schedule?enabled=true&interval_minutes=60&schedule_time=02:00")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["metadata_schedule_enabled"] is True
+    assert data["metadata_schedule_interval_minutes"] == 60
+    assert data["metadata_schedule_time"] == "02:00"
+    assert data["metadata_next_run_at"] is not None
+
+
+def test_metadata_scheduler_tick_api_returns_scan_counts(client, monkeypatch):
+    from app.api import metadata as metadata_api
+
+    monkeypatch.setattr(
+        metadata_api,
+        "run_metadata_scheduler_tick",
+        lambda execute_jobs=False: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [1]},
+    )
+
+    resp = client.post("/api/metadata/scheduler/tick")
+
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1
+
+
+def test_governance_api_filters_by_source(client):
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "metadata_table_deactivated",
+            "title": "metadata",
+            "source": "metadata_change_detected",
+        },
+    )
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "missing_semantic",
+            "title": "semantic",
+            "source": "auto_detect",
+        },
+    )
+
+    resp = client.get("/api/governance/?source=metadata_change_detected")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["source"] == "metadata_change_detected"
+
+
+def test_metadata_scheduler_runtime_respects_disabled_env(monkeypatch):
+    from fastapi import FastAPI
+
+    from app.services.metadata_scheduler_runtime import start_metadata_scheduler
+
+    monkeypatch.setenv("METADATA_SCHEDULER_ENABLED", "0")
+    app = FastAPI()
+
+    started = start_metadata_scheduler(app)
+
+    assert started is False
+    assert getattr(app.state, "metadata_scheduler_thread", None) is None
+
+
+def test_create_app_starts_metadata_scheduler_when_enabled(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    started = {"called": False}
+    stopped = {"called": False}
+
+    def fake_start(app):
+        started["called"] = True
+        return True
+
+    def fake_stop(app):
+        stopped["called"] = True
+
+    monkeypatch.setenv("METADATA_SCHEDULER_ENABLED", "1")
+    monkeypatch.setattr("app.main.start_metadata_scheduler", fake_start)
+    monkeypatch.setattr("app.main.stop_metadata_scheduler", fake_stop)
+
+    db_path = tmp_path / "scheduler-start.db"
+    with TestClient(create_app(database_url=f"sqlite:///{db_path}")):
+        pass
+
+    assert started["called"] is True
+    assert stopped["called"] is True
+
+
+def test_datasource_detail_page_shows_metadata_schedule(client):
+    create_resp = client.post(
+        "/api/datasources/",
+        params={
+            "name": "schedule page",
+            "ds_type": "oracle",
+            "host": "127.0.0.1",
+            "port": 1521,
+            "username": "u",
+            "metadata_schedule_enabled": True,
+            "metadata_schedule_interval_minutes": 1440,
+            "metadata_schedule_time": "02:00",
+        },
+    )
+    ds_id = create_resp.json()["id"]
+    db = get_session()
+    try:
+        ds = db.query(DatasourceConfig).filter(DatasourceConfig.id == ds_id).one()
+        ds.metadata_last_schedule_status = "created"
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/datasources/{ds_id}")
+
+    assert resp.status_code == 200
+    assert "自动采集" in resp.text
+    assert "02:00" in resp.text
+    assert "created" in resp.text
+
+
+def test_metadata_job_detail_page_shows_governance_ticket_count(client):
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="success",
+            triggered_by="scheduler",
+            governance_tickets_created_count=3,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "治理待办" in resp.text
+    assert "3" in resp.text
+    assert "source=metadata_change_detected" in resp.text
+
+
+def test_governance_page_filters_by_source(client):
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "metadata_table_deactivated",
+            "title": "metadata ticket",
+            "source": "metadata_change_detected",
+        },
+    )
+    client.post(
+        "/api/governance/",
+        params={
+            "ticket_type": "missing_semantic",
+            "title": "semantic ticket",
+            "source": "auto_detect",
+        },
+    )
+
+    resp = client.get("/web/governance?source=metadata_change_detected")
+
+    assert resp.status_code == 200
+    assert "metadata ticket" in resp.text
+    assert "semantic ticket" not in resp.text
+
+
+def test_validate_metadata_schedule_disabled_allows_incomplete_config():
+    """禁用自动采集时，不完整配置也会被规范化返回。"""
+    from app.services.metadata_schedule_service import validate_schedule
+
+    assert validate_schedule(False, None, " ") == (False, 1440, None)
+    assert validate_schedule(False, 10, None) == (False, 10, None)
+
+
+def test_validate_metadata_schedule_rejects_unknown_bool_string():
+    """布尔字符串必须是明确的 true/false 值。"""
+    import pytest
+
+    from app.services.metadata_schedule_service import validate_schedule
+
+    with pytest.raises(ValueError, match="布尔"):
+        validate_schedule("definitely-not-bool", 60, None)
+
+
+def test_validate_metadata_schedule_rejects_invalid_non_string_bool_payloads():
+    """布尔配置仅接受 bool、明确字符串和 0/1。"""
+    import pytest
+
+    from app.services.metadata_schedule_service import validate_schedule
+
+    for value in (None, [], {"x": 1}, 2):
+        with pytest.raises(ValueError, match="布尔"):
+            validate_schedule(value, 60, None)
+
+    assert validate_schedule(1, 60, None) == (True, 60, None)
+    assert validate_schedule(0, 60, None) == (False, 60, None)
+
+
+def test_metadata_schedule_utc_now_returns_naive_datetime():
+    """utc_now 返回无时区信息的 datetime。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import utc_now
+
+    now = utc_now()
+
+    assert isinstance(now, datetime)
+    assert now.tzinfo is None
+
+
+def test_metadata_schedule_constants_and_time_regex_contract():
+    """自动采集调度常量和时间正则保持基础合同。"""
+    from app.services.metadata_schedule_service import (
+        DEFAULT_METADATA_SCHEDULE_INTERVAL_MINUTES,
+        MIN_METADATA_SCHEDULE_INTERVAL_MINUTES,
+        SCHEDULE_TIME_RE,
+    )
+
+    assert MIN_METADATA_SCHEDULE_INTERVAL_MINUTES == 30
+    assert DEFAULT_METADATA_SCHEDULE_INTERVAL_MINUTES == 1440
+    assert SCHEDULE_TIME_RE.match("02:30")
+    assert not SCHEDULE_TIME_RE.match("2:30")
+    assert not SCHEDULE_TIME_RE.match("02:3")
+
+
+def test_serialize_metadata_schedule_uses_short_contract_keys():
+    """自动采集配置序列化使用规格要求的短 key。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import serialize_metadata_schedule
+
+    ds = DatasourceConfig(
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+        metadata_last_scheduled_at=datetime(2026, 6, 21, 2, 30, 0),
+        metadata_last_schedule_status="success",
+    )
+
+    result = serialize_metadata_schedule(ds)
+
+    assert set(result) == {
+        "enabled",
+        "interval_minutes",
+        "schedule_time",
+        "next_run_at",
+        "last_scheduled_at",
+        "last_schedule_status",
+    }
+    assert result == {
+        "enabled": True,
+        "interval_minutes": 60,
+        "schedule_time": "02:30",
+        "next_run_at": "2026-06-22 02:30:00",
+        "last_scheduled_at": "2026-06-21 02:30:00",
+        "last_schedule_status": "success",
+    }
+
+
+def test_update_metadata_schedule_validates_min_interval_and_time(db_session):
+    """自动采集配置会校验最小间隔和 HH:MM 时间格式。"""
+    import pytest
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule validation",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="至少 30 分钟"):
+        update_metadata_schedule(
+            ds.id,
+            {"metadata_schedule_enabled": True, "metadata_schedule_interval_minutes": 10},
+            db=db_session,
+        )
+
+    with pytest.raises(ValueError, match="HH:MM"):
+        update_metadata_schedule(
+            ds.id,
+            {
+                "metadata_schedule_enabled": True,
+                "metadata_schedule_interval_minutes": 60,
+                "metadata_schedule_time": "25:99",
+            },
+            db=db_session,
+        )
+
+
+def test_update_metadata_schedule_accepts_payload_and_updates(db_session):
+    """自动采集配置接受 payload dict 并写入规范化配置。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule payload",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    result = update_metadata_schedule(
+        ds.id,
+        {"enabled": True, "interval_minutes": None, "schedule_time": " 02:30 "},
+        db=db_session,
+        now=datetime(2026, 6, 22, 1, 0, 0),
+    )
+
+    assert result["enabled"] is True
+    assert result["interval_minutes"] == 1440
+    assert result["schedule_time"] == "02:30"
+    assert result["next_run_at"] == "2026-06-22 02:30:00"
+
+    db_session.refresh(ds)
+    assert ds.metadata_schedule_enabled is True
+    assert ds.metadata_schedule_interval_minutes == 1440
+    assert ds.metadata_schedule_time == "02:30"
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 2, 30, 0)
+
+
+def test_update_metadata_schedule_owned_session_commits_refreshes_and_closes(monkeypatch):
+    """自有 session 路径会提交、刷新并关闭。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services import metadata_schedule_service
+
+    ds = DatasourceConfig(
+        id=42,
+        name="owned schedule session",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.refreshed = None
+            self.closed = False
+            self.flushed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def flush(self):
+            self.flushed = True
+
+        def commit(self):
+            self.committed = True
+
+        def refresh(self, item):
+            self.refreshed = item
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            self.closed = True
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(metadata_schedule_service, "get_session", lambda: fake_session)
+
+    result = metadata_schedule_service.update_metadata_schedule(
+        42,
+        {"enabled": True, "interval_minutes": 90},
+        now=datetime(2026, 6, 22, 10, 0, 0),
+    )
+
+    assert result["next_run_at"] == "2026-06-22 11:30:00"
+    assert fake_session.flushed is True
+    assert fake_session.committed is True
+    assert fake_session.refreshed is ds
+    assert fake_session.closed is True
+
+
+def test_update_metadata_schedule_external_session_is_not_closed():
+    """传入外部 db 时不关闭外部 session。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        id=43,
+        name="external schedule session",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.refreshed = False
+            self.closed = False
+            self.flushed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def flush(self):
+            self.flushed = True
+
+        def commit(self):
+            self.committed = True
+
+        def refresh(self, _item):
+            self.refreshed = True
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            self.closed = True
+
+    fake_session = FakeSession()
+
+    result = update_metadata_schedule(
+        43,
+        {"metadata_schedule_enabled": True, "metadata_schedule_interval_minutes": 90},
+        db=fake_session,
+        now=datetime(2026, 6, 22, 10, 0, 0),
+    )
+
+    assert result["next_run_at"] == "2026-06-22 11:30:00"
+    assert fake_session.flushed is True
+    assert fake_session.committed is False
+    assert fake_session.refreshed is False
+    assert fake_session.closed is False
+
+
+def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
+    """禁用自动采集会清空下一次运行时间。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule disable",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    result = update_metadata_schedule(
+        ds.id,
+        {"metadata_schedule_enabled": False, "metadata_schedule_interval_minutes": 10},
+        db=db_session,
+    )
+
+    assert result["enabled"] is False
+    assert result["interval_minutes"] == 10
+    assert result["next_run_at"] is None
+
+    db_session.refresh(ds)
+    assert ds.metadata_schedule_enabled is False
+    assert ds.metadata_schedule_interval_minutes == 10
+    assert ds.metadata_next_run_at is None

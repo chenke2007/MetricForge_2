@@ -56,6 +56,21 @@
                 <input type="text" name="schema_names" class="form-control" placeholder="DW,DWD,DWS,ADS">
                 <div class="form-text">逗号分隔，留空采集全部</div>
             </div>
+            <div class="col-md-4">
+                <label class="form-label">自动采集</label>
+                <select name="metadata_schedule_enabled" class="form-select">
+                    <option value="false" selected>不启用</option>
+                    <option value="true">启用</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">采集间隔分钟</label>
+                <input type="number" name="metadata_schedule_interval_minutes" class="form-control" value="1440" min="30">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">每日固定时间</label>
+                <input type="time" name="metadata_schedule_time" class="form-control">
+            </div>
             <div class="col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 保存</button>
                 <button type="button" id="testConnBtn" class="btn btn-outline-info"><i class="bi bi-plug"></i> 测试连接</button>

@@ -21,6 +21,7 @@ def list_tickets(
     status: str = Query(None, description="按状态筛选: open/in_progress/resolved/closed"),
     ticket_type: str = Query(None, description="按类型筛选"),
     priority: str = Query(None, description="按优先级筛选"),
+    source: str = Query(None, description="按来源筛选"),
     db: Session = Depends(get_db),
 ):
     """列出治理待办"""
@@ -31,6 +32,8 @@ def list_tickets(
         q = q.filter(GovernanceTicket.ticket_type == ticket_type)
     if priority:
         q = q.filter(GovernanceTicket.priority == priority)
+    if source:
+        q = q.filter(GovernanceTicket.source == source)
     tickets = q.order_by(GovernanceTicket.created_at.desc()).all()
     return [
         {
@@ -110,6 +113,7 @@ def create_ticket(
     ticket_type: str = Query(..., description="待办类型"),
     title: str = Query(..., description="待办标题"),
     description: str = Query(None, description="详细描述"),
+    source: str = Query("manual_import", description="待办来源"),
     priority: str = Query("medium", description="优先级"),
     related_object_type: str = Query(None, description="关联对象类型"),
     related_object_id: int = Query(None, description="关联对象 ID"),
@@ -121,6 +125,7 @@ def create_ticket(
         ticket_type=ticket_type,
         title=title,
         description=description,
+        source=source,
         priority=priority,
         related_object_type=related_object_type,
         related_object_id=related_object_id,

@@ -24,6 +24,12 @@ class DatasourceConfig(Base):
     dialect: Mapped[str] = mapped_column(String(50), nullable=False, default="oracle", comment="SQL 方言")
     schema_names: Mapped[str] = mapped_column(Text, nullable=True, comment="关注 schema 列表（逗号分隔）")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+    metadata_schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否启用自动元数据采集")
+    metadata_schedule_interval_minutes: Mapped[int] = mapped_column(Integer, default=1440, nullable=False, comment="元数据自动采集间隔分钟")
+    metadata_schedule_time: Mapped[str] = mapped_column(String(5), nullable=True, comment="每日固定采集时间 HH:MM")
+    metadata_next_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="下一次自动采集时间")
+    metadata_last_scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, comment="最近一次自动调度时间")
+    metadata_last_schedule_status: Mapped[str] = mapped_column(String(30), nullable=True, comment="最近一次自动调度结果")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
