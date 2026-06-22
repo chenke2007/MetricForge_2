@@ -2828,6 +2828,7 @@ def test_calculate_next_metadata_run_at_uses_interval():
     now = datetime(2026, 6, 22, 10, 0, 0)
 
     assert calculate_next_run_at(now, 90, None) == datetime(2026, 6, 22, 11, 30, 0)
+    assert calculate_next_run_at(now, 90) == datetime(2026, 6, 22, 11, 30, 0)
 
 
 def test_calculate_next_metadata_run_at_uses_daily_time():
@@ -2860,6 +2861,42 @@ def test_validate_metadata_schedule_disabled_allows_incomplete_config():
 
     assert validate_schedule(False, None, " ") == (False, 1440, None)
     assert validate_schedule(False, 10, None) == (False, 10, None)
+
+
+def test_serialize_metadata_schedule_uses_short_contract_keys():
+    """自动采集配置序列化使用规格要求的短 key。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import serialize_metadata_schedule
+
+    ds = DatasourceConfig(
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+        metadata_last_scheduled_at=datetime(2026, 6, 21, 2, 30, 0),
+        metadata_last_schedule_status="success",
+    )
+
+    result = serialize_metadata_schedule(ds)
+
+    assert set(result) == {
+        "enabled",
+        "interval_minutes",
+        "schedule_time",
+        "next_run_at",
+        "last_scheduled_at",
+        "last_schedule_status",
+    }
+    assert result == {
+        "enabled": True,
+        "interval_minutes": 60,
+        "schedule_time": "02:30",
+        "next_run_at": "2026-06-22 02:30:00",
+        "last_scheduled_at": "2026-06-21 02:30:00",
+        "last_schedule_status": "success",
+    }
 
 
 def test_update_metadata_schedule_validates_min_interval_and_time(db_session):
@@ -2924,10 +2961,10 @@ def test_update_metadata_schedule_accepts_payload_and_updates(db_session):
         now=datetime(2026, 6, 22, 1, 0, 0),
     )
 
-    assert result["metadata_schedule_enabled"] is True
-    assert result["metadata_schedule_interval_minutes"] == 1440
-    assert result["metadata_schedule_time"] == "02:30"
-    assert result["metadata_next_run_at"] == "2026-06-22 02:30:00"
+    assert result["enabled"] is True
+    assert result["interval_minutes"] == 1440
+    assert result["schedule_time"] == "02:30"
+    assert result["next_run_at"] == "2026-06-22 02:30:00"
 
     db_session.refresh(ds)
     assert ds.metadata_schedule_enabled is True
@@ -2964,9 +3001,9 @@ def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
         db=db_session,
     )
 
-    assert result["metadata_schedule_enabled"] is False
-    assert result["metadata_schedule_interval_minutes"] == 10
-    assert result["metadata_next_run_at"] is None
+    assert result["enabled"] is False
+    assert result["interval_minutes"] == 10
+    assert result["next_run_at"] is None
 
     db_session.refresh(ds)
     assert ds.metadata_schedule_enabled is False

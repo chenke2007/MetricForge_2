@@ -55,7 +55,7 @@ def validate_schedule(
     return normalized_enabled, normalized_interval, normalized_schedule_time
 
 
-def calculate_next_run_at(now: datetime, interval_minutes: int, schedule_time: str | None) -> datetime:
+def calculate_next_run_at(now: datetime, interval_minutes: int, schedule_time: str | None = None) -> datetime:
     _, interval_minutes, schedule_time = validate_schedule(True, interval_minutes, schedule_time)
     if schedule_time:
         hour, minute = [int(part) for part in schedule_time.split(":", 1)]
@@ -68,12 +68,12 @@ def calculate_next_run_at(now: datetime, interval_minutes: int, schedule_time: s
 
 def serialize_metadata_schedule(ds: DatasourceConfig) -> dict:
     return {
-        "metadata_schedule_enabled": ds.metadata_schedule_enabled,
-        "metadata_schedule_interval_minutes": ds.metadata_schedule_interval_minutes,
-        "metadata_schedule_time": ds.metadata_schedule_time,
-        "metadata_next_run_at": str(ds.metadata_next_run_at) if ds.metadata_next_run_at else None,
-        "metadata_last_scheduled_at": str(ds.metadata_last_scheduled_at) if ds.metadata_last_scheduled_at else None,
-        "metadata_last_schedule_status": ds.metadata_last_schedule_status,
+        "enabled": ds.metadata_schedule_enabled,
+        "interval_minutes": ds.metadata_schedule_interval_minutes,
+        "schedule_time": ds.metadata_schedule_time,
+        "next_run_at": str(ds.metadata_next_run_at) if ds.metadata_next_run_at else None,
+        "last_scheduled_at": str(ds.metadata_last_scheduled_at) if ds.metadata_last_scheduled_at else None,
+        "last_schedule_status": ds.metadata_last_schedule_status,
     }
 
 
