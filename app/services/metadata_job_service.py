@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime
 
 from ..models import DatasourceConfig, MetadataCollectionJob, get_session
+from .metadata_change_governance_service import generate_governance_tickets_for_job
 from .metadata_service import collect_metadata
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ def serialize_collection_job(job: MetadataCollectionJob) -> dict:
         "indexes_deactivated_count": job.indexes_deactivated_count,
         "constraints_added_count": job.constraints_added_count,
         "constraints_deactivated_count": job.constraints_deactivated_count,
+        "governance_tickets_created_count": job.governance_tickets_created_count,
         "change_summary": job.change_summary,
         "error_message": job.error_message,
         "error_details": job.error_details,
@@ -167,6 +169,16 @@ def execute_metadata_collection_job(job_id: int) -> dict | None:
             else:
                 job.status = "failed"
                 job.error_message = result.get("error", "\u91c7\u96c6\u5931\u8d25")
+
+            if job.status in ("success", "partial_success"):
+                try:
+                    ticket_result = generate_governance_tickets_for_job(job.id, db=db)
+                    job.governance_tickets_created_count = ticket_result.get("created", 0) or 0
+                except Exception as governance_exc:
+                    logger.exception("Metadata governance ticket generation failed for job %s", job.id)
+                    details = job.error_details or ""
+                    suffix = f"Governance ticket generation failed: {governance_exc}"
+                    job.error_details = f"{details}\n{suffix}".strip()
         except Exception as exc:
             logger.exception("Metadata collection job %s failed", job_id)
             _mark_job_failed(job, str(exc))

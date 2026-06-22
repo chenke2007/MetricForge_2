@@ -3034,6 +3034,167 @@ def test_metadata_scheduler_tick_skipped_invalid_interval_advances_retry(db_sess
     assert ds.metadata_next_run_at == datetime(2026, 6, 22, 10, 30, 0)
 
 
+def test_generate_metadata_change_tickets_creates_column_type_ticket(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="change ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_ORDER")
+    db_session.add(table)
+    db_session.flush()
+    column = ColumnMetadata(table_id=table.id, column_name="ORDER_ID", column_type="VARCHAR2(30)")
+    db_session.add(column)
+    db_session.flush()
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "column_type_changed", "path": "DWHRPT.T_ORDER.ORDER_ID"}]}, ensure_ascii=False),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 1
+    ticket = db_session.query(GovernanceTicket).one()
+    assert ticket.ticket_type == "metadata_column_type_changed"
+    assert ticket.source == "metadata_change_detected"
+    assert ticket.related_object_type == "column"
+    assert ticket.related_object_id == column.id
+    assert ticket.priority == "high"
+
+
+def test_generate_metadata_change_tickets_is_idempotent_for_open_tickets(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="idem ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_ORDER")
+    db_session.add(table)
+    db_session.flush()
+    column = ColumnMetadata(table_id=table.id, column_name="OLD_CODE", column_type="VARCHAR2(20)", is_active=False)
+    db_session.add(column)
+    db_session.flush()
+    existing = GovernanceTicket(
+        ticket_type="metadata_column_deactivated",
+        title="column deactivated: DWHRPT.T_ORDER.OLD_CODE",
+        source="metadata_change_detected",
+        related_object_type="column",
+        related_object_id=column.id,
+        status="open",
+    )
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "column_deactivated", "path": "DWHRPT.T_ORDER.OLD_CODE"}]}, ensure_ascii=False),
+    )
+    db_session.add_all([existing, job])
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 0
+    assert result["skipped_existing"] == 1
+    assert db_session.query(GovernanceTicket).count() == 1
+
+
+def test_generate_metadata_change_tickets_creates_table_deactivated_ticket(db_session):
+    import json
+
+    from app.services.metadata_change_governance_service import generate_governance_tickets_for_job
+
+    ds = DatasourceConfig(name="table change ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+    db_session.add(ds)
+    db_session.flush()
+    table = TableMetadata(datasource_id=ds.id, schema_name="DWHRPT", table_name="T_OLD", is_active=False)
+    db_session.add(table)
+    db_session.flush()
+    job = MetadataCollectionJob(
+        datasource_id=ds.id,
+        status="success",
+        triggered_by="scheduler",
+        change_summary=json.dumps({"samples": [{"kind": "table_deactivated", "path": "DWHRPT.T_OLD"}]}, ensure_ascii=False),
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    result = generate_governance_tickets_for_job(job.id, db=db_session)
+
+    assert result["created"] == 1
+    ticket = db_session.query(GovernanceTicket).one()
+    assert ticket.ticket_type == "metadata_table_deactivated"
+    assert ticket.related_object_type == "table"
+    assert ticket.related_object_id == table.id
+    assert ticket.priority == "high"
+
+
+def test_execute_metadata_collection_job_records_governance_ticket_count(app, monkeypatch):
+    import json
+
+    from app.services import metadata_job_service
+
+    def fake_collect_metadata(datasource_id, schemas=None):
+        return {
+            "success": True,
+            "stats": {
+                "tables": 1,
+                "columns": 1,
+                "indexes": 0,
+                "constraints": 0,
+                "errors": [],
+                "changes": {
+                    "tables_added": 0,
+                    "tables_updated": 0,
+                    "tables_deactivated": 0,
+                    "columns_added": 0,
+                    "columns_updated": 0,
+                    "columns_deactivated": 0,
+                    "columns_type_changed": 1,
+                    "columns_comment_changed": 0,
+                    "indexes_added": 0,
+                    "indexes_deactivated": 0,
+                    "constraints_added": 0,
+                    "constraints_deactivated": 0,
+                    "samples": [{"kind": "column_type_changed", "path": "DWHRPT.T_ORDER.ORDER_ID"}],
+                },
+            },
+        }
+
+    monkeypatch.setattr(metadata_job_service, "collect_metadata", fake_collect_metadata)
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job governance ds", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(datasource_id=ds.id, status="running", triggered_by="scheduler")
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        metadata_job_service,
+        "generate_governance_tickets_for_job",
+        lambda job_id, db=None: {"created": 2, "skipped_existing": 0, "skipped_missing_object": 0, "skipped_unsupported": 0},
+    )
+
+    result = metadata_job_service.execute_metadata_collection_job(job_id)
+
+    assert result["status"] == "success"
+    assert result["governance_tickets_created_count"] == 2
+    assert json.loads(result["change_summary"])["columns_type_changed"] == 1
+
+
 def test_validate_metadata_schedule_disabled_allows_incomplete_config():
     """禁用自动采集时，不完整配置也会被规范化返回。"""
     from app.services.metadata_schedule_service import validate_schedule
