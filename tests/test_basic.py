@@ -2885,6 +2885,20 @@ def test_validate_metadata_schedule_rejects_unknown_bool_string():
         validate_schedule("definitely-not-bool", 60, None)
 
 
+def test_validate_metadata_schedule_rejects_invalid_non_string_bool_payloads():
+    """布尔配置仅接受 bool、明确字符串和 0/1。"""
+    import pytest
+
+    from app.services.metadata_schedule_service import validate_schedule
+
+    for value in (None, [], {"x": 1}, 2):
+        with pytest.raises(ValueError, match="布尔"):
+            validate_schedule(value, 60, None)
+
+    assert validate_schedule(1, 60, None) == (True, 60, None)
+    assert validate_schedule(0, 60, None) == (False, 60, None)
+
+
 def test_metadata_schedule_utc_now_returns_naive_datetime():
     """utc_now 返回无时区信息的 datetime。"""
     from datetime import datetime

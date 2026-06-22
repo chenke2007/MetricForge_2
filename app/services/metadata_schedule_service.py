@@ -18,6 +18,8 @@ def utc_now() -> datetime:
 
 
 def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
     if isinstance(value, str):
         normalized_value = value.strip().lower()
         if normalized_value in {"1", "true", "yes", "on"}:
@@ -25,7 +27,9 @@ def _parse_bool(value: object) -> bool:
         if normalized_value in {"0", "false", "no", "off"}:
             return False
         raise ValueError("布尔配置值必须为 true/false")
-    return bool(value)
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    raise ValueError("布尔配置值必须为 true/false")
 
 
 def _payload_value(payload: dict, *keys: str) -> object:
