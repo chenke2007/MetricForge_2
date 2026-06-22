@@ -2843,6 +2843,25 @@ def test_calculate_next_metadata_run_at_uses_daily_time():
     assert calculate_next_run_at(afternoon, 1440, "02:30") == datetime(2026, 6, 23, 2, 30, 0)
 
 
+def test_calculate_next_metadata_run_at_uses_daily_exact_boundary():
+    """固定时间等于当前时间时，仍返回当天执行点。"""
+    from datetime import datetime
+
+    from app.services.metadata_schedule_service import calculate_next_run_at
+
+    now = datetime(2026, 6, 22, 2, 30, 0)
+
+    assert calculate_next_run_at(now, 1440, "02:30") == datetime(2026, 6, 22, 2, 30, 0)
+
+
+def test_validate_metadata_schedule_disabled_allows_incomplete_config():
+    """禁用自动采集时，不完整配置也会被规范化返回。"""
+    from app.services.metadata_schedule_service import validate_schedule
+
+    assert validate_schedule(False, None, " ") == (False, 1440, None)
+    assert validate_schedule(False, 10, None) == (False, 10, None)
+
+
 def test_update_metadata_schedule_validates_min_interval_and_time(db_session):
     """自动采集配置会校验最小间隔和 HH:MM 时间格式。"""
     import pytest
@@ -2862,7 +2881,94 @@ def test_update_metadata_schedule_validates_min_interval_and_time(db_session):
     db_session.commit()
 
     with pytest.raises(ValueError, match="至少 30 分钟"):
-        update_metadata_schedule(ds.id, True, 10, None, db=db_session)
+        update_metadata_schedule(
+            ds.id,
+            {"metadata_schedule_enabled": True, "metadata_schedule_interval_minutes": 10},
+            db=db_session,
+        )
 
     with pytest.raises(ValueError, match="HH:MM"):
-        update_metadata_schedule(ds.id, True, 60, "25:99", db=db_session)
+        update_metadata_schedule(
+            ds.id,
+            {
+                "metadata_schedule_enabled": True,
+                "metadata_schedule_interval_minutes": 60,
+                "metadata_schedule_time": "25:99",
+            },
+            db=db_session,
+        )
+
+
+def test_update_metadata_schedule_accepts_payload_and_updates(db_session):
+    """自动采集配置接受 payload dict 并写入规范化配置。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule payload",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    result = update_metadata_schedule(
+        ds.id,
+        {"enabled": True, "interval_minutes": None, "schedule_time": " 02:30 "},
+        db=db_session,
+        now=datetime(2026, 6, 22, 1, 0, 0),
+    )
+
+    assert result["metadata_schedule_enabled"] is True
+    assert result["metadata_schedule_interval_minutes"] == 1440
+    assert result["metadata_schedule_time"] == "02:30"
+    assert result["metadata_next_run_at"] == "2026-06-22 02:30:00"
+
+    db_session.refresh(ds)
+    assert ds.metadata_schedule_enabled is True
+    assert ds.metadata_schedule_interval_minutes == 1440
+    assert ds.metadata_schedule_time == "02:30"
+    assert ds.metadata_next_run_at == datetime(2026, 6, 22, 2, 30, 0)
+
+
+def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
+    """禁用自动采集会清空下一次运行时间。"""
+    from datetime import datetime
+
+    from app.models import DatasourceConfig
+    from app.services.metadata_schedule_service import update_metadata_schedule
+
+    ds = DatasourceConfig(
+        name="schedule disable",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+    )
+    db_session.add(ds)
+    db_session.commit()
+
+    result = update_metadata_schedule(
+        ds.id,
+        {"metadata_schedule_enabled": False, "metadata_schedule_interval_minutes": 10},
+        db=db_session,
+    )
+
+    assert result["metadata_schedule_enabled"] is False
+    assert result["metadata_schedule_interval_minutes"] == 10
+    assert result["metadata_next_run_at"] is None
+
+    db_session.refresh(ds)
+    assert ds.metadata_schedule_enabled is False
+    assert ds.metadata_schedule_interval_minutes == 10
+    assert ds.metadata_next_run_at is None
