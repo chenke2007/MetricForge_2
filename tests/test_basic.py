@@ -4015,6 +4015,33 @@ def test_dwhrpt_smoke_script_dry_run_initializes_empty_database(tmp_path):
     assert "RuntimeError" not in result.stderr
 
 
+def test_dwhrpt_smoke_script_default_sqlite_creates_missing_parent_dir(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    cwd = tmp_path / "isolated-cwd"
+    cwd.mkdir()
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.pop("METRICFORGE_DB_URL", None)
+    env.pop("METRICFORGE_CONFIG", None)
+
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts/smoke_dwhrpt_metadata_collection.py"), "--datasource-name", "dwhrpt"],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "dwhrpt datasource not found" in result.stdout
+    assert "unable to open database file" not in result.stderr
+    assert "Traceback" not in result.stderr
+    assert (cwd / "data").is_dir()
+
+
 def test_dwhrpt_smoke_execute_returns_empty_success_exit_code(monkeypatch, capsys):
     from scripts import smoke_dwhrpt_metadata_collection as smoke
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from app.models import DatasourceConfig, MetadataCollectionJob, get_session
 from app.services.metadata_schedule_service import utc_now
 from app.services.metadata_scheduler_service import run_metadata_scheduler_tick
 
+DEFAULT_DATABASE_URL = "sqlite:///./data/metricforge.db"
 _SENSITIVE_ASSIGNMENT_RE = re.compile(r"(?i)\b(password_enc|password|pwd|token|secret)(\s*=\s*)[^\s,;&]+")
 _CONNECTION_URL_RE = re.compile(r"(?i)\b(?:sqlite|oracle\+[a-z0-9_]+)://[^\s,;\"']+")
 
@@ -118,11 +120,35 @@ def _exit_code_for_job(job: MetadataCollectionJob | None) -> tuple[int, str | No
     return 2, f"unexpected job status: {job.status}"
 
 
+def _resolve_database_url() -> str:
+    env_database_url = os.environ.get("METRICFORGE_DB_URL")
+    if env_database_url:
+        return env_database_url
+
+    try:
+        from app.config import loader as config_loader
+
+        configured_database_url = config_loader.get_config("database.url")
+    except Exception:
+        configured_database_url = None
+
+    return configured_database_url or DEFAULT_DATABASE_URL
+
+
+def _ensure_sqlite_parent_dir(database_url: str) -> None:
+    if not database_url.startswith("sqlite:///") or database_url == "sqlite:///:memory:":
+        return
+
+    db_path = database_url.removeprefix("sqlite:///")
+    if not db_path:
+        return
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
 def _initialize_database() -> None:
-    from app.main import _resolve_database_url
     from app.models import init_db, init_tables
 
-    db_url = _resolve_database_url(database_url=None, config_path=None)
+    db_url = _resolve_database_url()
+    _ensure_sqlite_parent_dir(db_url)
     init_db(db_url)
     init_tables()
 
