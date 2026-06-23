@@ -12,7 +12,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.models import DatasourceConfig, get_session
+from app.models import DatasourceConfig, MetadataCollectionJob, get_session
+from app.services.metadata_schedule_service import utc_now
 from app.services.metadata_scheduler_service import run_metadata_scheduler_tick
 
 
@@ -50,6 +51,58 @@ def _safe_datasource_summary(ds: DatasourceConfig) -> dict[str, Any]:
 
 def _find_datasource(db, datasource_name: str) -> DatasourceConfig | None:
     return db.query(DatasourceConfig).filter(DatasourceConfig.name == datasource_name).first()
+
+
+def _latest_job_for_tick(db, ds_id: int, job_ids: list[int]) -> MetadataCollectionJob | None:
+    query = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.datasource_id == ds_id)
+    if job_ids:
+        query = query.filter(MetadataCollectionJob.id.in_(job_ids))
+    return query.order_by(MetadataCollectionJob.started_at.desc()).first()
+
+
+def _job_summary(job: MetadataCollectionJob | None) -> dict[str, Any] | None:
+    if not job:
+        return None
+    error_detail_lines = []
+    if job.error_details:
+        error_detail_lines = str(job.error_details).splitlines()[:20]
+    return {
+        "id": job.id,
+        "status": job.status,
+        "triggered_by": job.triggered_by,
+        "schema_filter": job.schema_filter,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "duration_ms": job.duration_ms,
+        "tables_count": job.tables_count,
+        "columns_count": job.columns_count,
+        "indexes_count": job.indexes_count,
+        "constraints_count": job.constraints_count,
+        "tables_added_count": job.tables_added_count,
+        "tables_deactivated_count": job.tables_deactivated_count,
+        "columns_added_count": job.columns_added_count,
+        "columns_deactivated_count": job.columns_deactivated_count,
+        "columns_type_changed_count": job.columns_type_changed_count,
+        "columns_comment_changed_count": job.columns_comment_changed_count,
+        "governance_tickets_created_count": job.governance_tickets_created_count,
+        "change_summary": job.change_summary,
+        "error_message": job.error_message,
+        "error_details_preview": error_detail_lines,
+    }
+
+
+def _exit_code_for_job(job: MetadataCollectionJob | None) -> tuple[int, str | None]:
+    if not job:
+        return 2, "scheduler tick did not create or reuse a metadata collection job"
+    if job.status == "failed":
+        return 2, job.error_message or "metadata collection failed"
+    if job.status == "partial_success":
+        return 3, job.error_message or "metadata collection partially succeeded"
+    if job.status == "success" and ((job.tables_count or 0) == 0 or (job.columns_count or 0) == 0):
+        return 4, "empty metadata collection success"
+    if job.status == "success":
+        return 0, None
+    return 2, f"unexpected job status: {job.status}"
 
 
 def _initialize_database() -> None:
@@ -91,8 +144,30 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
-        _json_print({"success": False, "error": "execute mode is added in Task 2"})
-        return 2
+        now = utc_now()
+        if schema_override:
+            ds.schema_names = schema_override
+        ds.metadata_schedule_enabled = True
+        ds.metadata_next_run_at = now
+        db.commit()
+        db.refresh(ds)
+
+        scheduler_result = run_metadata_scheduler_tick(execute_jobs=True)
+        job_ids = scheduler_result.get("job_ids") or []
+        job = _latest_job_for_tick(db, ds.id, job_ids)
+        exit_code, diagnostic = _exit_code_for_job(job)
+        _json_print(
+            {
+                "success": exit_code == 0,
+                "dry_run": False,
+                "diagnostic": diagnostic,
+                "executed_at": utc_now().isoformat(timespec="seconds"),
+                "datasource": _safe_datasource_summary(ds),
+                "scheduler_result": scheduler_result,
+                "job": _job_summary(job),
+            }
+        )
+        return exit_code
     finally:
         db.close()
 

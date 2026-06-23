@@ -3856,3 +3856,144 @@ def test_dwhrpt_smoke_script_dry_run_initializes_empty_database(tmp_path):
     assert "dwhrpt datasource not found" in result.stdout
     assert "ModuleNotFoundError" not in result.stderr
     assert "RuntimeError" not in result.stderr
+
+
+def test_dwhrpt_smoke_execute_returns_empty_success_exit_code(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=8,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=99,
+        datasource_id=8,
+        status="success",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        indexes_count=0,
+        constraints_count=0,
+        governance_tickets_created_count=0,
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [99]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert '"status": "success"' in captured.out
+    assert '"tables_count": 0' in captured.out
+    assert "empty metadata collection success" in captured.out
+
+
+def test_dwhrpt_smoke_execute_failed_job_returns_two(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=9,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=100,
+        datasource_id=9,
+        status="failed",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        error_message="ORA-01017 invalid username/password",
+        error_details="ORA-01017 invalid username/password",
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [100]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "ORA-01017" in captured.out
