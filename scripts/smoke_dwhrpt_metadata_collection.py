@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.models import DatasourceConfig, MetadataCollectionJob, get_session
 from app.services.metadata_schedule_service import utc_now
 from app.services.metadata_scheduler_service import run_metadata_scheduler_tick
+
+_SENSITIVE_ASSIGNMENT_RE = re.compile(r"(?i)\b(password_enc|password|pwd|token|secret)(\s*=\s*)[^\s,;&]+")
+_CONNECTION_URL_RE = re.compile(r"(?i)\b(?:sqlite|oracle\+[a-z0-9_]+)://[^\s,;\"']+")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -53,10 +57,19 @@ def _find_datasource(db, datasource_name: str) -> DatasourceConfig | None:
     return db.query(DatasourceConfig).filter(DatasourceConfig.name == datasource_name).first()
 
 
+def _redact_sensitive_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    text = _SENSITIVE_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text)
+    return _CONNECTION_URL_RE.sub("[REDACTED]", text)
+
+
 def _latest_job_for_tick(db, ds_id: int, job_ids: list[int]) -> MetadataCollectionJob | None:
+    if not job_ids:
+        return None
     query = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.datasource_id == ds_id)
-    if job_ids:
-        query = query.filter(MetadataCollectionJob.id.in_(job_ids))
+    query = query.filter(MetadataCollectionJob.id.in_(job_ids))
     return query.order_by(MetadataCollectionJob.started_at.desc()).first()
 
 
@@ -65,7 +78,7 @@ def _job_summary(job: MetadataCollectionJob | None) -> dict[str, Any] | None:
         return None
     error_detail_lines = []
     if job.error_details:
-        error_detail_lines = str(job.error_details).splitlines()[:20]
+        error_detail_lines = [_redact_sensitive_text(line)[:300] for line in str(job.error_details).splitlines()[:10]]
     return {
         "id": job.id,
         "status": job.status,
@@ -86,7 +99,7 @@ def _job_summary(job: MetadataCollectionJob | None) -> dict[str, Any] | None:
         "columns_comment_changed_count": job.columns_comment_changed_count,
         "governance_tickets_created_count": job.governance_tickets_created_count,
         "change_summary": job.change_summary,
-        "error_message": job.error_message,
+        "error_message": _redact_sensitive_text(job.error_message),
         "error_details_preview": error_detail_lines,
     }
 
@@ -144,23 +157,40 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
-        now = utc_now()
-        if schema_override:
-            ds.schema_names = schema_override
-        ds.metadata_schedule_enabled = True
-        ds.metadata_next_run_at = now
-        db.commit()
-        db.refresh(ds)
+        original_schedule = {
+            "schema_names": ds.schema_names,
+            "metadata_schedule_enabled": ds.metadata_schedule_enabled,
+            "metadata_next_run_at": ds.metadata_next_run_at,
+            "metadata_schedule_interval_minutes": ds.metadata_schedule_interval_minutes,
+            "metadata_schedule_time": ds.metadata_schedule_time,
+        }
+        scheduler_result = None
+        job = None
+        try:
+            now = utc_now()
+            if schema_override:
+                ds.schema_names = schema_override
+            ds.metadata_schedule_enabled = True
+            ds.metadata_next_run_at = now
+            db.commit()
+            db.refresh(ds)
 
-        scheduler_result = run_metadata_scheduler_tick(execute_jobs=True)
-        job_ids = scheduler_result.get("job_ids") or []
-        job = _latest_job_for_tick(db, ds.id, job_ids)
+            scheduler_result = run_metadata_scheduler_tick(execute_jobs=True)
+            job_ids = scheduler_result.get("job_ids") or []
+            job = _latest_job_for_tick(db, ds.id, job_ids)
+        finally:
+            for field, value in original_schedule.items():
+                setattr(ds, field, value)
+            db.commit()
+            db.refresh(ds)
+
+        ds = _find_datasource(db, args.datasource_name) or ds
         exit_code, diagnostic = _exit_code_for_job(job)
         _json_print(
             {
                 "success": exit_code == 0,
                 "dry_run": False,
-                "diagnostic": diagnostic,
+                "diagnostic": _redact_sensitive_text(diagnostic),
                 "executed_at": utc_now().isoformat(timespec="seconds"),
                 "datasource": _safe_datasource_summary(ds),
                 "scheduler_result": scheduler_result,

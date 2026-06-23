@@ -3997,3 +3997,217 @@ def test_dwhrpt_smoke_execute_failed_job_returns_two(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "ORA-01017" in captured.out
+
+
+def test_dwhrpt_smoke_execute_returns_two_when_tick_creates_no_job_even_with_history(monkeypatch, tmp_path, capsys):
+    import json
+    from datetime import datetime
+
+    from app.models import init_db, init_tables
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    db_path = tmp_path / "dwhrpt-no-job.db"
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="dwhrpt",
+            ds_type="oracle",
+            host="10.10.10.10",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="DWHRPT",
+            metadata_schedule_enabled=True,
+            metadata_schedule_interval_minutes=1440,
+        )
+        db.add(ds)
+        db.flush()
+        db.add(
+            MetadataCollectionJob(
+                datasource_id=ds.id,
+                status="success",
+                triggered_by="scheduler",
+                started_at=datetime(2026, 6, 22, 10, 0, 0),
+                tables_count=12,
+                columns_count=34,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(
+        smoke,
+        "run_metadata_scheduler_tick",
+        lambda execute_jobs=True: {"checked": 1, "created": 0, "reused_running": 0, "skipped": 1, "failed": 0, "job_ids": []},
+    )
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 2
+    assert payload["diagnostic"] == "scheduler tick did not create or reuse a metadata collection job"
+    assert payload["job"] is None
+
+
+def test_dwhrpt_smoke_execute_restores_schema_override_after_tick(monkeypatch, capsys):
+    import json
+    from datetime import datetime
+
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=10,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+        metadata_schedule_interval_minutes=1440,
+        metadata_schedule_time="02:00",
+        metadata_next_run_at=datetime(2026, 6, 24, 2, 0, 0),
+    )
+    job = MetadataCollectionJob(
+        id=101,
+        datasource_id=10,
+        status="success",
+        triggered_by="scheduler",
+        tables_count=3,
+        columns_count=9,
+    )
+    observed = {}
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    def fake_tick(execute_jobs=True):
+        observed["schema_during_tick"] = ds.schema_names
+        return {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [101]}
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", fake_tick)
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--schema", "adhoc", "--execute"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert observed["schema_during_tick"] == "ADHOC"
+    assert ds.schema_names == "DWHRPT"
+    assert payload["datasource"]["schema_names"] == "DWHRPT"
+    assert payload["datasource"]["metadata_schedule_enabled"] is False
+    assert payload["datasource"]["metadata_next_run_at"] == "2026-06-24 02:00:00"
+
+
+def test_dwhrpt_smoke_execute_redacts_sensitive_error_output(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=11,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=102,
+        datasource_id=11,
+        status="failed",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        error_message="login failed password=super-secret",
+        error_details="\n".join(
+            [
+                "connection oracle+cx_oracle://readonly:super-secret@db.example/DWHRPT",
+                "retry token=super-secret",
+                "fallback sqlite:///tmp/super-secret.db",
+            ]
+        ),
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [102]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "super-secret" not in captured.out
+    assert "[REDACTED]" in captured.out
