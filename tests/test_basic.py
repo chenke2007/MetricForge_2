@@ -3464,6 +3464,7 @@ def test_metadata_job_detail_page_shows_governance_ticket_count(client):
         ds = DatasourceConfig(name="job ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
         db.add(ds)
         db.flush()
+        ds_id = ds.id
         job = MetadataCollectionJob(
             datasource_id=ds.id,
             status="success",
@@ -3481,7 +3482,9 @@ def test_metadata_job_detail_page_shows_governance_ticket_count(client):
     assert resp.status_code == 200
     assert "治理待办" in resp.text
     assert "3" in resp.text
+    assert "查看元数据变更待办" in resp.text
     assert "source=metadata_change_detected" in resp.text
+    assert f"/web/datasources/{ds_id}" in resp.text
 
 
 def test_governance_page_filters_by_source(client):

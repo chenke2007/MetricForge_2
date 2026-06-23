@@ -23,7 +23,13 @@
             <div class="card-body">
                 <dl class="row mb-0 small">
                     <dt class="col-sm-3">数据源</dt>
-                    <dd class="col-sm-9">{{ job.datasource.name if job.datasource else '数据源 #' ~ job.datasource_id }}</dd>
+                    <dd class="col-sm-9">
+                        {% if job.datasource %}
+                        <a href="/web/datasources/{{ job.datasource.id }}" class="text-decoration-none">{{ job.datasource.name }}</a>
+                        {% else %}
+                        数据源 #{{ job.datasource_id }}
+                        {% endif %}
+                    </dd>
                     <dt class="col-sm-3">状态</dt>
                     <dd class="col-sm-9">{{ job.status }}</dd>
                     <dt class="col-sm-3">触发人</dt>
