@@ -3393,6 +3393,71 @@ def test_metadata_job_overview_and_schedule_rows_helpers(db_session, monkeypatch
     assert rows[0]["latest_error"] == "1 个采集错误"
 
 
+def test_metadata_jobs_page_shows_overview_and_schedule_rows(client):
+    from datetime import datetime, timedelta
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="dwhrpt",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="DWHRPT",
+            metadata_schedule_enabled=True,
+            metadata_schedule_interval_minutes=60,
+            metadata_schedule_time="02:30",
+            metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+            metadata_last_scheduled_at=datetime(2026, 6, 21, 2, 30, 0),
+            metadata_last_schedule_status="created",
+        )
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="partial_success",
+            triggered_by="scheduler",
+            started_at=datetime.utcnow() - timedelta(hours=1),
+            finished_at=datetime.utcnow(),
+            tables_count=12,
+            columns_count=120,
+            tables_added_count=1,
+            columns_type_changed_count=2,
+            governance_tickets_created_count=3,
+            error_message="1 个采集错误",
+        )
+        db.add(job)
+        db.add(
+            GovernanceTicket(
+                ticket_type="metadata_column_type_changed",
+                title="字段类型变化",
+                source="metadata_change_detected",
+                status="open",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get("/web/metadata/jobs")
+
+    assert resp.status_code == 200
+    assert "任务概览" in resp.text
+    assert "启用自动采集" in resp.text
+    assert "数据源调度状态" in resp.text
+    assert "dwhrpt" in resp.text
+    assert "02:30" in resp.text
+    assert "created" in resp.text
+    assert "partial_success" in resp.text
+    assert "1 个采集错误" in resp.text
+    assert "source=metadata_change_detected" in resp.text
+    assert "执行一次调度扫描" in resp.text
+    assert "立即采集" in resp.text
+    assert "scheduler" in resp.text
+
+
 def test_metadata_job_detail_page_shows_governance_ticket_count(client):
     db = get_session()
     try:
