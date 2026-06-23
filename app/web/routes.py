@@ -1,6 +1,7 @@
 """Web UI 页面路由"""
 
 import json
+from datetime import timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -38,6 +39,72 @@ def _parse_change_summary(raw_summary: str | None) -> dict:
     if not isinstance(samples, list):
         parsed["samples"] = []
     return parsed
+
+
+def _metadata_job_overview(db) -> dict:
+    from app.services.metadata_schedule_service import utc_now
+
+    now = utc_now()
+    since = now - timedelta(hours=24)
+    enabled_datasources = (
+        db.query(DatasourceConfig)
+        .filter(DatasourceConfig.is_active.is_(True), DatasourceConfig.metadata_schedule_enabled.is_(True))
+        .count()
+    )
+    running_jobs = db.query(MetadataCollectionJob).filter(MetadataCollectionJob.status == "running").count()
+    success_24h = (
+        db.query(MetadataCollectionJob)
+        .filter(MetadataCollectionJob.started_at >= since, MetadataCollectionJob.status == "success")
+        .count()
+    )
+    issue_24h = (
+        db.query(MetadataCollectionJob)
+        .filter(
+            MetadataCollectionJob.started_at >= since,
+            MetadataCollectionJob.status.in_(["failed", "partial_success"]),
+        )
+        .count()
+    )
+    open_change_tickets = (
+        db.query(GovernanceTicket)
+        .filter(
+            GovernanceTicket.source == "metadata_change_detected",
+            GovernanceTicket.status.in_(["open", "in_progress"]),
+        )
+        .count()
+    )
+    return {
+        "enabled_datasources": enabled_datasources,
+        "running_jobs": running_jobs,
+        "success_24h": success_24h,
+        "issue_24h": issue_24h,
+        "open_change_tickets": open_change_tickets,
+    }
+
+
+def _metadata_schedule_rows(db) -> list[dict]:
+    datasources = (
+        db.query(DatasourceConfig)
+        .filter(DatasourceConfig.is_active.is_(True), DatasourceConfig.metadata_schedule_enabled.is_(True))
+        .order_by(DatasourceConfig.name)
+        .all()
+    )
+    rows = []
+    for ds in datasources:
+        latest_job = (
+            db.query(MetadataCollectionJob)
+            .filter(MetadataCollectionJob.datasource_id == ds.id)
+            .order_by(MetadataCollectionJob.started_at.desc())
+            .first()
+        )
+        rows.append(
+            {
+                "datasource": ds,
+                "latest_job": latest_job,
+                "latest_error": latest_job.error_message if latest_job else None,
+            }
+        )
+    return rows
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -148,6 +215,8 @@ def metadata_jobs(request: Request, datasource_id: str = None, status: str = Non
             q = q.filter(MetadataCollectionJob.status == status_value)
         jobs = q.order_by(MetadataCollectionJob.started_at.desc()).limit(100).all()
         datasources = db.query(DatasourceConfig).order_by(DatasourceConfig.name).all()
+        overview = _metadata_job_overview(db)
+        schedule_rows = _metadata_schedule_rows(db)
         return templates.TemplateResponse(
             request,
             "metadata/jobs.html",
@@ -155,6 +224,8 @@ def metadata_jobs(request: Request, datasource_id: str = None, status: str = Non
                 "request": request,
                 "jobs": jobs,
                 "datasources": datasources,
+                "overview": overview,
+                "schedule_rows": schedule_rows,
                 "current_datasource_id": datasource_id_value,
                 "current_status": status_value,
             },
