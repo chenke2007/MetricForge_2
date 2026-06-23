@@ -128,7 +128,7 @@
     <div class="card-header bg-white"><span class="fw-bold">治理待办</span></div>
     <div class="card-body small">
         <div>本次自动生成治理待办：<strong>{{ job.governance_tickets_created_count }}</strong> 个</div>
-        {% if job.governance_tickets_created_count %}
+        {% if (job.governance_tickets_created_count or 0) > 0 %}
         <a href="/web/governance?source=metadata_change_detected" class="btn btn-sm btn-outline-primary mt-2">查看元数据变更待办</a>
         {% endif %}
     </div>

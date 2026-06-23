@@ -3487,6 +3487,33 @@ def test_metadata_job_detail_page_shows_governance_ticket_count(client):
     assert f"/web/datasources/{ds_id}" in resp.text
 
 
+def test_metadata_job_detail_page_hides_governance_link_when_count_zero(client):
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job no ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        ds_id = ds.id
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="success",
+            triggered_by="scheduler",
+            governance_tickets_created_count=0,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "治理待办" in resp.text
+    assert "查看元数据变更待办" not in resp.text
+    assert f"/web/datasources/{ds_id}" in resp.text
+
+
 def test_governance_page_filters_by_source(client):
     client.post(
         "/api/governance/",
