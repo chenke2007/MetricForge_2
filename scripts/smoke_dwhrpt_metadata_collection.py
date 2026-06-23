@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.models import DatasourceConfig, get_session
 from app.services.metadata_scheduler_service import run_metadata_scheduler_tick
@@ -46,8 +52,18 @@ def _find_datasource(db, datasource_name: str) -> DatasourceConfig | None:
     return db.query(DatasourceConfig).filter(DatasourceConfig.name == datasource_name).first()
 
 
+def _initialize_database() -> None:
+    from app.main import _resolve_database_url
+    from app.models import init_db, init_tables
+
+    db_url = _resolve_database_url(database_url=None, config_path=None)
+    init_db(db_url)
+    init_tables()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    _initialize_database()
     db = get_session()
     try:
         ds = _find_datasource(db, args.datasource_name)

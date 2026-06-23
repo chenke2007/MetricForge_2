@@ -3720,6 +3720,8 @@ def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
 
 
 def test_dwhrpt_smoke_dry_run_reports_missing_datasource(monkeypatch, capsys):
+    import json
+
     from scripts import smoke_dwhrpt_metadata_collection as smoke
 
     class FakeQuery:
@@ -3730,23 +3732,35 @@ def test_dwhrpt_smoke_dry_run_reports_missing_datasource(monkeypatch, capsys):
             return None
 
     class FakeSession:
+        def __init__(self):
+            self.closed = False
+
         def query(self, _model):
             return FakeQuery()
 
         def close(self):
-            pass
+            self.closed = True
 
-    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    session = FakeSession()
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None, raising=False)
+    monkeypatch.setattr(smoke, "get_session", lambda: session)
 
     exit_code = smoke.main(["--datasource-name", "dwhrpt"])
 
     captured = capsys.readouterr()
+    payload = json.loads(captured.out)
     assert exit_code == 1
-    assert "dwhrpt datasource not found" in captured.out
-    assert '"datasource_name": "dwhrpt"' in captured.out
+    assert payload["success"] is False
+    assert payload["dry_run"] is True
+    assert payload["datasource_name"] == "dwhrpt"
+    assert payload["error"] == "dwhrpt datasource not found"
+    assert "password_enc" not in payload
+    assert session.closed is True
 
 
 def test_dwhrpt_smoke_dry_run_existing_datasource_does_not_execute(monkeypatch, capsys):
+    import json
+
     from scripts import smoke_dwhrpt_metadata_collection as smoke
 
     ds = DatasourceConfig(
@@ -3770,7 +3784,9 @@ def test_dwhrpt_smoke_dry_run_existing_datasource_does_not_execute(monkeypatch, 
             return ds
 
     class FakeSession:
-        committed = False
+        def __init__(self):
+            self.committed = False
+            self.closed = False
 
         def query(self, _model):
             return FakeQuery()
@@ -3779,17 +3795,64 @@ def test_dwhrpt_smoke_dry_run_existing_datasource_does_not_execute(monkeypatch, 
             self.committed = True
 
         def close(self):
-            pass
+            self.closed = True
 
     session = FakeSession()
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None, raising=False)
     monkeypatch.setattr(smoke, "get_session", lambda: session)
     monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=False: (_ for _ in ()).throw(AssertionError("should not execute")))
 
     exit_code = smoke.main(["--datasource-name", "dwhrpt"])
 
     captured = capsys.readouterr()
+    payload = json.loads(captured.out)
     assert exit_code == 0
-    assert '"dry_run": true' in captured.out
-    assert '"password_enc"' not in captured.out
-    assert '"host": "10.10.10.10"' in captured.out
+    assert payload["success"] is True
+    assert payload["dry_run"] is True
+    assert "password_enc" not in payload["datasource"]
+    assert payload["datasource"]["host"] == "10.10.10.10"
     assert session.committed is False
+    assert session.closed is True
+
+
+def test_dwhrpt_smoke_script_help_runs_from_project_root():
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/smoke_dwhrpt_metadata_collection.py", "--help"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--datasource-name" in result.stdout
+
+
+def test_dwhrpt_smoke_script_dry_run_initializes_empty_database(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["METRICFORGE_DB_URL"] = f"sqlite:///{tmp_path / 'smoke.db'}"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.smoke_dwhrpt_metadata_collection", "--datasource-name", "dwhrpt"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "dwhrpt datasource not found" in result.stdout
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "RuntimeError" not in result.stderr
