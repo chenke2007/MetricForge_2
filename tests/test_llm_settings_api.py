@@ -10,8 +10,9 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client():
-    app = create_app(database_url="sqlite:///./data/test_llm_settings.db")
+def client(tmp_path):
+    db_path = tmp_path / "test.db"
+    app = create_app(database_url=f"sqlite:///{db_path}")
     with TestClient(app) as c:
         yield c
 

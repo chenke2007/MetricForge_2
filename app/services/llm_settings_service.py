@@ -77,8 +77,9 @@ class LlmSettingsService:
         db.refresh(s)
         return self._to_response(s)
 
-    def get_active(self, db: Session) -> LlmSetting | None:
-        return db.query(LlmSetting).filter(LlmSetting.is_active == 1).first()
+    def get_active(self, db: Session) -> dict | None:
+        s = db.query(LlmSetting).filter(LlmSetting.is_active == 1).first()
+        return self._to_response(s) if s else None
 
     def test_connection(self, db: Session, setting_id: int) -> dict:
         """测试 LLM 连接。返回脱敏后的结果。"""
@@ -121,7 +122,7 @@ class LlmSettingsService:
             return "模型不存在，请检查模型名"
         if "timeout" in msg or "timed out" in msg:
             return "连接超时，请检查网络或服务器状态"
-        return f"连接测试失败（{type(e).__name__}）"
+        return "连接测试失败，请检查配置"
 
     def _to_response(self, s: LlmSetting) -> dict:
         return {
