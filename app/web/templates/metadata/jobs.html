@@ -5,9 +5,123 @@
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-1"><i class="bi bi-clock-history me-2"></i>采集任务中心</h4>
-        <p class="text-muted small mb-0">查看元数据采集任务状态、统计和失败原因</p>
+        <p class="text-muted small mb-0">查看元数据采集任务、自动调度和变更治理状态</p>
     </div>
-    <a href="/web/datasources" class="btn btn-sm btn-primary"><i class="bi bi-plug me-1"></i>去数据源采集</a>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="runSchedulerTick()">
+            <i class="bi bi-arrow-clockwise me-1"></i>执行一次调度扫描
+        </button>
+        <a href="/web/datasources" class="btn btn-sm btn-primary">
+            <i class="bi bi-plug me-1"></i>去数据源采集
+        </a>
+    </div>
+</div>
+
+<div id="schedulerTickResult" class="mb-3"></div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">任务概览</h5>
+            <a href="/web/governance?source=metadata_change_detected" class="small text-decoration-none">
+                查看变更治理待办
+            </a>
+        </div>
+        <div class="row g-3">
+            <div class="col-md col-6">
+                <div class="stat-card h-100">
+                    <div class="stat-number">{{ overview.enabled_datasources if overview else 0 }}</div>
+                    <div class="stat-label">启用自动采集</div>
+                </div>
+            </div>
+            <div class="col-md col-6">
+                <div class="stat-card h-100">
+                    <div class="stat-number">{{ overview.running_jobs if overview else 0 }}</div>
+                    <div class="stat-label">运行中任务</div>
+                </div>
+            </div>
+            <div class="col-md col-6">
+                <div class="stat-card h-100">
+                    <div class="stat-number">{{ overview.success_24h if overview else 0 }}</div>
+                    <div class="stat-label">24小时成功</div>
+                </div>
+            </div>
+            <div class="col-md col-6">
+                <div class="stat-card h-100">
+                    <div class="stat-number">{{ overview.issue_24h if overview else 0 }}</div>
+                    <div class="stat-label">24小时异常</div>
+                </div>
+            </div>
+            <div class="col-md col-6">
+                <div class="stat-card h-100">
+                    <div class="stat-number">{{ overview.open_change_tickets if overview else 0 }}</div>
+                    <div class="stat-label">变更治理待办</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h5 class="mb-3">数据源调度状态</h5>
+        {% if schedule_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>数据源</th>
+                        <th>周期/时间</th>
+                        <th>下次运行</th>
+                        <th>上次调度</th>
+                        <th>调度状态</th>
+                        <th>最近任务</th>
+                        <th>最近错误</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in schedule_rows %}
+                    {% set ds = row.datasource %}
+                    {% set latest_job = row.latest_job %}
+                    <tr>
+                        <td>
+                            <a href="/web/datasources/{{ ds.id }}" class="fw-semibold text-decoration-none">{{ ds.name }}</a>
+                        </td>
+                        <td>
+                            <div>{{ ds.metadata_schedule_interval_minutes or '-' }} 分钟</div>
+                            <div class="text-muted">{{ ds.metadata_schedule_time or '-' }}</div>
+                        </td>
+                        <td>{{ ds.metadata_next_run_at.strftime('%Y-%m-%d %H:%M') if ds.metadata_next_run_at else '-' }}</td>
+                        <td>{{ ds.metadata_last_scheduled_at.strftime('%Y-%m-%d %H:%M') if ds.metadata_last_scheduled_at else '-' }}</td>
+                        <td>{{ ds.metadata_last_schedule_status or '-' }}</td>
+                        <td>
+                            {% if latest_job %}
+                            <a href="/web/metadata/jobs/{{ latest_job.id }}" class="text-decoration-none">
+                                #{{ latest_job.id }} {{ latest_job.status }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ row.latest_error or '-' }}</td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" title="立即采集" onclick="createCollectionJob({{ ds.id }})">
+                                    立即采集
+                                </button>
+                                <a href="/web/datasources/{{ ds.id }}" class="btn btn-sm btn-outline-secondary">数据源</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">暂无启用自动采集的数据源</div>
+        {% endif %}
+    </div>
 </div>
 
 <div class="card shadow-sm mb-3">
@@ -33,7 +147,9 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <button class="btn btn-outline-primary btn-sm w-100" type="submit"><i class="bi bi-funnel me-1"></i>筛选</button>
+                <button class="btn btn-outline-primary btn-sm w-100" type="submit">
+                    <i class="bi bi-funnel me-1"></i>筛选
+                </button>
             </div>
         </form>
     </div>
@@ -42,34 +158,64 @@
 <div class="card shadow-sm">
     <div class="card-body p-0">
         {% if jobs %}
-        <table class="table table-hover mb-0 small">
-            <thead class="table-light">
-                <tr>
-                    <th>ID</th>
-                    <th>数据源</th>
-                    <th>状态</th>
-                    <th>开始时间</th>
-                    <th>耗时</th>
-                    <th>表 / 字段</th>
-                    <th>错误</th>
-                    <th>详情</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for job in jobs %}
-                <tr>
-                    <td>#{{ job.id }}</td>
-                    <td>{{ job.datasource.name if job.datasource else '数据源 #' ~ job.datasource_id }}</td>
-                    <td><span class="badge bg-{{ 'success' if job.status == 'success' else 'warning' if job.status == 'partial_success' else 'danger' if job.status == 'failed' else 'secondary' }}">{{ job.status }}</span></td>
-                    <td>{{ job.started_at.strftime('%Y-%m-%d %H:%M') if job.started_at else '-' }}</td>
-                    <td>{{ (job.duration_ms ~ ' ms') if job.duration_ms is not none else '-' }}</td>
-                    <td>{{ job.tables_count }} / {{ job.columns_count }}</td>
-                    <td class="text-muted">{{ job.error_message or '-' }}</td>
-                    <td><a href="/web/metadata/jobs/{{ job.id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>数据源</th>
+                        <th>状态</th>
+                        <th>触发</th>
+                        <th>开始时间</th>
+                        <th>表/字段</th>
+                        <th>变更</th>
+                        <th>治理待办</th>
+                        <th>错误</th>
+                        <th>详情</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                    {% set change_count =
+                        (job.tables_added_count or 0) +
+                        (job.tables_deactivated_count or 0) +
+                        (job.columns_added_count or 0) +
+                        (job.columns_deactivated_count or 0) +
+                        (job.columns_type_changed_count or 0) +
+                        (job.columns_comment_changed_count or 0)
+                    %}
+                    <tr>
+                        <td>#{{ job.id }}</td>
+                        <td>{{ job.datasource.name if job.datasource else '数据源#' ~ job.datasource_id }}</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if job.status == 'success' else 'warning' if job.status == 'partial_success' else 'danger' if job.status == 'failed' else 'secondary' }}">
+                                {{ job.status }}
+                            </span>
+                        </td>
+                        <td>{{ job.triggered_by or '-' }}</td>
+                        <td>{{ job.started_at.strftime('%Y-%m-%d %H:%M') if job.started_at else '-' }}</td>
+                        <td>{{ job.tables_count or 0 }} / {{ job.columns_count or 0 }}</td>
+                        <td>{{ change_count }}</td>
+                        <td>
+                            {% if (job.governance_tickets_created_count or 0) > 0 %}
+                            <a href="/web/governance?source=metadata_change_detected" class="text-decoration-none">
+                                {{ job.governance_tickets_created_count }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">0</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ job.error_message or '-' }}</td>
+                        <td>
+                            <a href="/web/metadata/jobs/{{ job.id }}" class="btn btn-sm btn-outline-primary" title="查看详情">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-clock-history fs-1 d-block mb-3"></i>
@@ -79,4 +225,71 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showSchedulerMessage(html, type) {
+    const target = document.getElementById('schedulerTickResult');
+    if (!target) {
+        return;
+    }
+    target.innerHTML = '<div class="alert alert-' + type + ' py-2 mb-0">' + html + '</div>';
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+async function runSchedulerTick() {
+    showSchedulerMessage('正在执行调度扫描...', 'info');
+    try {
+        const response = await fetch('/api/metadata/scheduler/tick', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || data.message || '调度扫描失败');
+        }
+        const jobLinks = (data.job_ids || []).map(function (id) {
+            return '<a href="/web/metadata/jobs/' + encodeURIComponent(id) + '">#' + escapeHtml(id) + '</a>';
+        });
+        let message = '扫描完成：检查 ' + escapeHtml(data.checked || 0)
+            + ' 个，创建 ' + escapeHtml(data.created || 0)
+            + ' 个，复用运行中 ' + escapeHtml(data.reused_running || 0)
+            + ' 个，跳过 ' + escapeHtml(data.skipped || 0)
+            + ' 个，失败 ' + escapeHtml(data.failed || 0) + ' 个。';
+        if (jobLinks.length > 0) {
+            message += ' 任务：' + jobLinks.join(' ');
+        }
+        showSchedulerMessage(message, 'success');
+    } catch (error) {
+        showSchedulerMessage(escapeHtml(error.message || error), 'danger');
+    }
+}
+
+async function createCollectionJob(datasourceId) {
+    showSchedulerMessage('正在创建采集任务...', 'info');
+    try {
+        const response = await fetch('/api/metadata/jobs/' + encodeURIComponent(datasourceId), { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || data.message || '创建采集任务失败');
+        }
+        if (data.id) {
+            showSchedulerMessage(
+                '采集任务已创建：<a href="/web/metadata/jobs/' + encodeURIComponent(data.id) + '">#' + escapeHtml(data.id) + '</a>',
+                'success'
+            );
+        } else {
+            showSchedulerMessage('采集任务已创建', 'success');
+        }
+    } catch (error) {
+        showSchedulerMessage(escapeHtml(error.message || error), 'danger');
+    }
+}
+</script>
 {% endblock %}

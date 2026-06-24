@@ -3331,12 +3331,140 @@ def test_datasource_detail_page_shows_metadata_schedule(client):
     assert "created" in resp.text
 
 
+def test_metadata_job_overview_and_schedule_rows_helpers(db_session, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from app.services import metadata_schedule_service
+    from app.web.routes import _metadata_job_overview, _metadata_schedule_rows
+
+    now = datetime(2026, 6, 23, 2, 30, 0)
+    monkeypatch.setattr(metadata_schedule_service, "utc_now", lambda: now)
+    ds = DatasourceConfig(
+        name="dwhrpt",
+        ds_type="oracle",
+        host="127.0.0.1",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=60,
+        metadata_schedule_time="02:30",
+        metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+        metadata_last_scheduled_at=datetime(2026, 6, 21, 2, 30, 0),
+        metadata_last_schedule_status="created",
+    )
+    db_session.add(ds)
+    db_session.flush()
+    db_session.add(
+        MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="partial_success",
+            triggered_by="scheduler",
+            started_at=now - timedelta(hours=1),
+            finished_at=now,
+            tables_count=12,
+            columns_count=120,
+            tables_added_count=1,
+            columns_type_changed_count=2,
+            governance_tickets_created_count=3,
+            error_message="1 个采集错误",
+        )
+    )
+    db_session.add(
+        GovernanceTicket(
+            ticket_type="metadata_column_type_changed",
+            title="字段类型变化",
+            source="metadata_change_detected",
+            status="open",
+        )
+    )
+    db_session.commit()
+
+    overview = _metadata_job_overview(db_session)
+    rows = _metadata_schedule_rows(db_session)
+
+    assert overview["enabled_datasources"] == 1
+    assert overview["issue_24h"] == 1
+    assert overview["open_change_tickets"] == 1
+    assert len(rows) == 1
+    assert rows[0]["datasource"].name == "dwhrpt"
+    assert rows[0]["latest_job"].status == "partial_success"
+    assert rows[0]["latest_error"] == "1 个采集错误"
+
+
+def test_metadata_jobs_page_shows_overview_and_schedule_rows(client):
+    from datetime import datetime, timedelta
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="dwhrpt",
+            ds_type="oracle",
+            host="127.0.0.1",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="DWHRPT",
+            metadata_schedule_enabled=True,
+            metadata_schedule_interval_minutes=60,
+            metadata_schedule_time="02:30",
+            metadata_next_run_at=datetime(2026, 6, 22, 2, 30, 0),
+            metadata_last_scheduled_at=datetime(2026, 6, 21, 2, 30, 0),
+            metadata_last_schedule_status="created",
+        )
+        db.add(ds)
+        db.flush()
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="partial_success",
+            triggered_by="scheduler",
+            started_at=datetime.utcnow() - timedelta(hours=1),
+            finished_at=datetime.utcnow(),
+            tables_count=12,
+            columns_count=120,
+            tables_added_count=1,
+            columns_type_changed_count=2,
+            governance_tickets_created_count=3,
+            error_message="1 个采集错误",
+        )
+        db.add(job)
+        db.add(
+            GovernanceTicket(
+                ticket_type="metadata_column_type_changed",
+                title="字段类型变化",
+                source="metadata_change_detected",
+                status="open",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get("/web/metadata/jobs")
+
+    assert resp.status_code == 200
+    assert "任务概览" in resp.text
+    assert "启用自动采集" in resp.text
+    assert "数据源调度状态" in resp.text
+    assert "dwhrpt" in resp.text
+    assert "02:30" in resp.text
+    assert "created" in resp.text
+    assert "partial_success" in resp.text
+    assert "1 个采集错误" in resp.text
+    assert "source=metadata_change_detected" in resp.text
+    assert "执行一次调度扫描" in resp.text
+    assert "立即采集" in resp.text
+    assert "scheduler" in resp.text
+
+
 def test_metadata_job_detail_page_shows_governance_ticket_count(client):
     db = get_session()
     try:
         ds = DatasourceConfig(name="job ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
         db.add(ds)
         db.flush()
+        ds_id = ds.id
         job = MetadataCollectionJob(
             datasource_id=ds.id,
             status="success",
@@ -3354,7 +3482,36 @@ def test_metadata_job_detail_page_shows_governance_ticket_count(client):
     assert resp.status_code == 200
     assert "治理待办" in resp.text
     assert "3" in resp.text
+    assert "查看元数据变更待办" in resp.text
     assert "source=metadata_change_detected" in resp.text
+    assert f"/web/datasources/{ds_id}" in resp.text
+
+
+def test_metadata_job_detail_page_hides_governance_link_when_count_zero(client):
+    db = get_session()
+    try:
+        ds = DatasourceConfig(name="job no ticket page", ds_type="oracle", host="127.0.0.1", port=1521, username="u", dialect="oracle")
+        db.add(ds)
+        db.flush()
+        ds_id = ds.id
+        job = MetadataCollectionJob(
+            datasource_id=ds.id,
+            status="success",
+            triggered_by="scheduler",
+            governance_tickets_created_count=0,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    finally:
+        db.close()
+
+    resp = client.get(f"/web/metadata/jobs/{job_id}")
+
+    assert resp.status_code == 200
+    assert "治理待办" in resp.text
+    assert "查看元数据变更待办" not in resp.text
+    assert f"/web/datasources/{ds_id}" in resp.text
 
 
 def test_governance_page_filters_by_source(client):
@@ -3717,3 +3874,524 @@ def test_update_metadata_schedule_disables_and_clears_next_run_at(db_session):
     assert ds.metadata_schedule_enabled is False
     assert ds.metadata_schedule_interval_minutes == 10
     assert ds.metadata_next_run_at is None
+
+
+def test_dwhrpt_smoke_dry_run_reports_missing_datasource(monkeypatch, capsys):
+    import json
+
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    class FakeQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def close(self):
+            self.closed = True
+
+    session = FakeSession()
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None, raising=False)
+    monkeypatch.setattr(smoke, "get_session", lambda: session)
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 1
+    assert payload["success"] is False
+    assert payload["dry_run"] is True
+    assert payload["datasource_name"] == "dwhrpt"
+    assert payload["error"] == "dwhrpt datasource not found"
+    assert "password_enc" not in payload
+    assert session.closed is True
+
+
+def test_dwhrpt_smoke_dry_run_existing_datasource_does_not_execute(monkeypatch, capsys):
+    import json
+
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=7,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        service_name="ORCLPDB1",
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+    )
+
+    class FakeQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def __init__(self):
+            self.committed = False
+            self.closed = False
+
+        def query(self, _model):
+            return FakeQuery()
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            self.closed = True
+
+    session = FakeSession()
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None, raising=False)
+    monkeypatch.setattr(smoke, "get_session", lambda: session)
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=False: (_ for _ in ()).throw(AssertionError("should not execute")))
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["success"] is True
+    assert payload["dry_run"] is True
+    assert "password_enc" not in payload["datasource"]
+    assert payload["datasource"]["host"] == "10.10.10.10"
+    assert session.committed is False
+    assert session.closed is True
+
+
+def test_dwhrpt_smoke_script_help_runs_from_project_root():
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/smoke_dwhrpt_metadata_collection.py", "--help"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--datasource-name" in result.stdout
+
+
+def test_dwhrpt_smoke_script_dry_run_initializes_empty_database(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["METRICFORGE_DB_URL"] = f"sqlite:///{tmp_path / 'smoke.db'}"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.smoke_dwhrpt_metadata_collection", "--datasource-name", "dwhrpt"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "dwhrpt datasource not found" in result.stdout
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "RuntimeError" not in result.stderr
+
+
+def test_dwhrpt_smoke_script_default_sqlite_creates_missing_parent_dir(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    cwd = tmp_path / "isolated-cwd"
+    cwd.mkdir()
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.pop("METRICFORGE_DB_URL", None)
+    env.pop("METRICFORGE_CONFIG", None)
+
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts/smoke_dwhrpt_metadata_collection.py"), "--datasource-name", "dwhrpt"],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "dwhrpt datasource not found" in result.stdout
+    assert "unable to open database file" not in result.stderr
+    assert "Traceback" not in result.stderr
+    assert (cwd / "data").is_dir()
+
+
+def test_dwhrpt_smoke_execute_returns_empty_success_exit_code(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=8,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=99,
+        datasource_id=8,
+        status="success",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        indexes_count=0,
+        constraints_count=0,
+        governance_tickets_created_count=0,
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [99]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert '"status": "success"' in captured.out
+    assert '"tables_count": 0' in captured.out
+    assert "empty metadata collection success" in captured.out
+
+
+def test_dwhrpt_smoke_execute_failed_job_returns_two(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=9,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=100,
+        datasource_id=9,
+        status="failed",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        error_message="ORA-01017 invalid username/password",
+        error_details="ORA-01017 invalid username/password",
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [100]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "ORA-01017" in captured.out
+
+
+def test_dwhrpt_smoke_execute_returns_two_when_tick_creates_no_job_even_with_history(monkeypatch, tmp_path, capsys):
+    import json
+    from datetime import datetime
+
+    from app.models import init_db, init_tables
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    db_path = tmp_path / "dwhrpt-no-job.db"
+    init_db(f"sqlite:///{db_path}")
+    init_tables()
+
+    db = get_session()
+    try:
+        ds = DatasourceConfig(
+            name="dwhrpt",
+            ds_type="oracle",
+            host="10.10.10.10",
+            port=1521,
+            username="readonly",
+            dialect="oracle",
+            schema_names="DWHRPT",
+            metadata_schedule_enabled=True,
+            metadata_schedule_interval_minutes=1440,
+        )
+        db.add(ds)
+        db.flush()
+        db.add(
+            MetadataCollectionJob(
+                datasource_id=ds.id,
+                status="success",
+                triggered_by="scheduler",
+                started_at=datetime(2026, 6, 22, 10, 0, 0),
+                tables_count=12,
+                columns_count=34,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(
+        smoke,
+        "run_metadata_scheduler_tick",
+        lambda execute_jobs=True: {"checked": 1, "created": 0, "reused_running": 0, "skipped": 1, "failed": 0, "job_ids": []},
+    )
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 2
+    assert payload["diagnostic"] == "scheduler tick did not create or reuse a metadata collection job"
+    assert payload["job"] is None
+
+
+def test_dwhrpt_smoke_execute_restores_schema_override_after_tick(monkeypatch, capsys):
+    import json
+    from datetime import datetime
+
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=10,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=False,
+        metadata_schedule_interval_minutes=1440,
+        metadata_schedule_time="02:00",
+        metadata_next_run_at=datetime(2026, 6, 24, 2, 0, 0),
+    )
+    job = MetadataCollectionJob(
+        id=101,
+        datasource_id=10,
+        status="success",
+        triggered_by="scheduler",
+        tables_count=3,
+        columns_count=9,
+    )
+    observed = {}
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    def fake_tick(execute_jobs=True):
+        observed["schema_during_tick"] = ds.schema_names
+        return {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [101]}
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", fake_tick)
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--schema", "adhoc", "--execute"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert observed["schema_during_tick"] == "ADHOC"
+    assert ds.schema_names == "DWHRPT"
+    assert payload["datasource"]["schema_names"] == "DWHRPT"
+    assert payload["datasource"]["metadata_schedule_enabled"] is False
+    assert payload["datasource"]["metadata_next_run_at"] == "2026-06-24 02:00:00"
+
+
+def test_dwhrpt_smoke_execute_redacts_sensitive_error_output(monkeypatch, capsys):
+    from scripts import smoke_dwhrpt_metadata_collection as smoke
+
+    ds = DatasourceConfig(
+        id=11,
+        name="dwhrpt",
+        ds_type="oracle",
+        host="10.10.10.10",
+        port=1521,
+        username="readonly",
+        dialect="oracle",
+        schema_names="DWHRPT",
+        metadata_schedule_enabled=True,
+        metadata_schedule_interval_minutes=1440,
+    )
+    job = MetadataCollectionJob(
+        id=102,
+        datasource_id=11,
+        status="failed",
+        triggered_by="scheduler",
+        tables_count=0,
+        columns_count=0,
+        error_message="login failed password=super-secret",
+        error_details="\n".join(
+            [
+                "connection oracle+cx_oracle://readonly:super-secret@db.example/DWHRPT",
+                "retry token=super-secret",
+                "fallback sqlite:///tmp/super-secret.db",
+            ]
+        ),
+    )
+
+    class FakeJobQuery:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def first(self):
+            return job
+
+    class FakeDatasourceQuery:
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return ds
+
+    class FakeSession:
+        def query(self, model):
+            if model is DatasourceConfig:
+                return FakeDatasourceQuery()
+            return FakeJobQuery()
+
+        def commit(self):
+            pass
+
+        def refresh(self, _item):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smoke, "_initialize_database", lambda: None)
+    monkeypatch.setattr(smoke, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(smoke, "run_metadata_scheduler_tick", lambda execute_jobs=True: {"checked": 1, "created": 1, "reused_running": 0, "skipped": 0, "failed": 0, "job_ids": [102]})
+
+    exit_code = smoke.main(["--datasource-name", "dwhrpt", "--execute"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "super-secret" not in captured.out
+    assert "[REDACTED]" in captured.out
