@@ -8,6 +8,7 @@ from .field_semantic import FieldSemantic
 from .table_relation import TableRelation
 from .governance_ticket import GovernanceTicket
 from .metadata_job import MetadataCollectionJob
+from .ask_models import LlmSetting, AskSession, AskMessage
 
 __all__ = [
     "Base",
@@ -26,4 +27,7 @@ __all__ = [
     "TableRelation",
     "GovernanceTicket",
     "MetadataCollectionJob",
+    "LlmSetting",
+    "AskSession",
+    "AskMessage",
 ]
