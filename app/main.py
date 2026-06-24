@@ -64,6 +64,7 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     from .api.governance import router as governance_router
     from .api.field_semantics import router as field_semantics_router
     from .api.llm_settings import router as llm_settings_router
+    from .api.ask import router as ask_router
     from .web.routes import router as web_router
 
     app.include_router(datasources_router, prefix="/api/datasources", tags=["数据源"])
@@ -74,6 +75,8 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     app.include_router(field_semantics_router, prefix="/api/field-semantics", tags=["Field Semantics"])
 
     app.include_router(llm_settings_router, prefix="/api/llm-settings", tags=["LLM 配置"])
+
+    app.include_router(ask_router, prefix="/api/ask", tags=["AI 问数"])
 
     # Register Web UI routes.
     app.include_router(web_router, prefix="/web", tags=["Web 页面"])
