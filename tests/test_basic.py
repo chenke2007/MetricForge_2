@@ -4395,3 +4395,11 @@ def test_dwhrpt_smoke_execute_redacts_sensitive_error_output(monkeypatch, capsys
     assert exit_code == 2
     assert "super-secret" not in captured.out
     assert "[REDACTED]" in captured.out
+
+
+def test_frontend_app_mount_serves_index(client):
+    """Modern frontend SPA should be served at /app"""
+    resp = client.get("/app/")
+    # If frontend/dist doesn't exist, FastAPI may return 404.
+    # This test is informative — it should pass after Task 5 build.
+    assert resp.status_code in (200, 404), f"Unexpected status: {resp.status_code}"

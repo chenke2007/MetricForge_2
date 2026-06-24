@@ -2,9 +2,11 @@
 
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import loader as config_loader
 from .models import init_db, init_tables
@@ -72,6 +74,11 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
 
     # Register Web UI routes.
     app.include_router(web_router, prefix="/web", tags=["Web 页面"])
+
+    # Mount modern frontend (React SPA) at /app.
+    frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        app.mount("/app", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
 
     @app.get("/health")
     def health():
