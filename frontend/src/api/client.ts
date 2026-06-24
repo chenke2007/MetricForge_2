@@ -22,10 +22,10 @@ export function apiFetch<T>(
   options?: RequestInit,
 ): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
-    ...options,
   }).then(handleResponse<T>)
 }
