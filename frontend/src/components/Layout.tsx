@@ -5,7 +5,7 @@ import {
   DashboardOutlined,
   GithubOutlined,
   SettingOutlined,
-  MessageOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 
@@ -29,7 +29,7 @@ const menuItems = [
   },
   {
     key: '/ask',
-    icon: <MessageOutlined />,
+    icon: <RobotOutlined />,
     label: 'AI 问数',
   },
 ]

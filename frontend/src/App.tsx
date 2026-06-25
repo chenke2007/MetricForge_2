@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import MetadataJobsPage from './pages/MetadataJobsPage'
 import LlmSettingsPage from './pages/LlmSettingsPage'
+import AskWorkbenchPage from './pages/AskWorkbenchPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +26,7 @@ function App() {
             <Route path="/" element={<Typography.Title level={3}>欢迎使用 MetricForge 智能数据工作台</Typography.Title>} />
             <Route path="/metadata/jobs" element={<MetadataJobsPage />} />
             <Route path="/llm-settings" element={<LlmSettingsPage />} />
-            <Route path="/ask" element={<Typography.Text type="secondary">AI 问数工作台（开发中）</Typography.Text>} />
+            <Route path="/ask" element={<AskWorkbenchPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
