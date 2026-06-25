@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { message, Layout, Typography } from 'antd'
 import { ClearOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
@@ -17,7 +17,6 @@ const AskWorkbenchPage: React.FC = () => {
   const qc = useQueryClient()
   const currentSessionId = useAskStore((s) => s.currentSessionId)
   const setCurrentSession = useAskStore((s) => s.setCurrentSession)
-  const streaming = useAskStore((s) => s.streaming)
   const startStream = useAskStore((s) => s.startStream)
   const appendToken = useAskStore((s) => s.appendToken)
   const stopStream = useAskStore((s) => s.stopStream)
@@ -25,6 +24,7 @@ const AskWorkbenchPage: React.FC = () => {
   const { data: messages, isLoading: messagesLoading } =
     useAskMessages(currentSessionId)
   const createMessage = useCreateMessage()
+  const [streamingActive, setStreamingActive] = useState(false)
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -50,78 +50,67 @@ const AskWorkbenchPage: React.FC = () => {
 
         // Start SSE stream
         startStream(assistantId)
-        const controller = new AbortController()
+        setStreamingActive(true)
 
         const token = Date.now().toString(36)
-        const response = await fetch(
-          `/api/ask/sessions/${currentSessionId}/stream?after=${assistantId}&_t=${token}`,
-          { signal: controller.signal }
-        )
+        const streamUrl = `/api/ask/sessions/${currentSessionId}/stream?after=${assistantId}&_t=${token}`
+        const es = new EventSource(streamUrl)
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
-
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('No response body')
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let currentEvent = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              currentEvent = line.slice(7).trim()
-            } else if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                if (currentEvent === 'token' && data.delta) {
-                  appendToken(data.delta)
-                } else if (currentEvent === 'error') {
-                  const errMsg = data.error || data.detail || '流式响应出错'
-                  stopStream()
-                  message.error(errMsg)
-                  qc.invalidateQueries({
-                    queryKey: ['askSessions', currentSessionId],
-                  })
-                  qc.invalidateQueries({
-                    queryKey: ['askSessions', currentSessionId, 'messages'],
-                  })
-                  qc.invalidateQueries({ queryKey: ['askSessions'] })
-                  return // exit cleanly
-                }
-              } catch {
-                // ignore parse errors
-              }
-            } else if (line === '' && currentEvent === 'done') {
-              // End of stream
-            }
+        await new Promise<void>((resolve) => {
+          let handled = false
+          const cleanup = () => {
+            if (handled) return
+            handled = true
+            es.close()
+            stopStream()
+            setStreamingActive(false)
+            qc.invalidateQueries({
+              queryKey: ['askSessions', currentSessionId],
+            })
+            qc.invalidateQueries({
+              queryKey: ['askSessions', currentSessionId, 'messages'],
+            })
+            qc.invalidateQueries({ queryKey: ['askSessions'] })
+            resolve()
           }
-        }
 
-        stopStream()
-        qc.invalidateQueries({
-          queryKey: ['askSessions', currentSessionId],
+          es.addEventListener('token', (e) => {
+            try {
+              const data = JSON.parse((e as MessageEvent).data)
+              if (data.delta) appendToken(data.delta)
+            } catch {
+              // ignore parse errors
+            }
+          })
+
+          es.addEventListener('error', (e) => {
+            try {
+              const data = JSON.parse((e as MessageEvent).data)
+              const errMsg = data.error || data.detail || '流式响应出错'
+              message.error(errMsg)
+              cleanup()
+            } catch {
+              // ignore parse errors
+            }
+          })
+
+          es.addEventListener('done', () => {
+            cleanup()
+          })
+
+          es.onerror = () => {
+            message.error('SSE 连接失败')
+            cleanup()
+          }
         })
-        qc.invalidateQueries({
-          queryKey: ['askSessions', currentSessionId, 'messages'],
-        })
-        qc.invalidateQueries({ queryKey: ['askSessions'] })
       } catch (err: any) {
         if (err.name === 'AbortError') return
         stopStream()
+        setStreamingActive(false)
         message.error('发送失败，请重试')
       }
     },
-    [currentSessionId, createMessage, qc, startStream, appendToken, stopStream]
+    [currentSessionId, createMessage, qc, startStream, appendToken, stopStream, setStreamingActive]
   )
 
   return (
@@ -159,7 +148,7 @@ const AskWorkbenchPage: React.FC = () => {
                 background: '#fff',
               }}
             >
-              <AskInput onSend={handleSend} loading={createMessage.isPending} disabled={streaming?.visible ?? false} />
+              <AskInput onSend={handleSend} loading={createMessage.isPending} disabled={streamingActive} />
             </div>
           </>
         ) : (

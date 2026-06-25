@@ -33,6 +33,11 @@ data/metrics/*.xlsx
 data/metrics/*.xls
 data/history_sql/
 
+# Reports / logs
+reports/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
+.vite/
+.gstack/

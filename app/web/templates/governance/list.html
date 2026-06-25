@@ -2,6 +2,7 @@
 {% block title %}治理待办{% endblock %}
 
 {% block content %}
+{% from "macros/pagination.html" import render_pagination %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-1"><i class="bi bi-check2-square me-2"></i>治理待办</h4>
@@ -81,6 +82,11 @@
         </div>
         {% endif %}
     </div>
+    {% if pagination.total_pages > 1 %}
+    <div class="card-footer bg-white py-3">
+        {{ render_pagination(pagination, '/web/governance', filter_query) }}
+    </div>
+    {% endif %}
 </div>
 
 <!-- 详情查看 Modal -->
@@ -184,6 +190,11 @@ function applyGovernanceFilters() {
     }
     if (source) {
         params.set('source', source);
+    }
+    const currentParams = new URLSearchParams(window.location.search);
+    const perPage = currentParams.get('per_page');
+    if (perPage) {
+        params.set('per_page', perPage);
     }
     const query = params.toString();
     window.location.href = query ? '?' + query : '/web/governance';

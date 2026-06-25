@@ -3255,8 +3255,9 @@ def test_governance_api_filters_by_source(client):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["source"] == "metadata_change_detected"
+    assert data["pagination"]["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["source"] == "metadata_change_detected"
 
 
 def test_metadata_scheduler_runtime_respects_disabled_env(monkeypatch):

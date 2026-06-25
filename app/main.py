@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import loader as config_loader
 from .models import init_db, init_tables
@@ -39,6 +40,20 @@ def _resolve_database_url(database_url: str | None = None, config_path: str | No
         configured_database_url = None
 
     return configured_database_url or DEFAULT_DATABASE_URL
+
+
+class SPAStaticFiles(StaticFiles):
+    """Serves index.html for any unmatched path so client-side routing works."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                # Try serving index.html for client-side routing
+                scope["path"] = "/index.html"
+                return await super().get_response("index.html", scope)
+            raise
 
 
 def create_app(config_path: str | None = None, database_url: str | None = None) -> FastAPI:
@@ -81,10 +96,10 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     # Register Web UI routes.
     app.include_router(web_router, prefix="/web", tags=["Web 页面"])
 
-    # Mount modern frontend (React SPA) at /app.
+    # Mount modern frontend (React SPA) at /app with SPA fallback.
     frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     if frontend_dist.is_dir():
-        app.mount("/app", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+        app.mount("/app", SPAStaticFiles(directory=str(frontend_dist), html=True), name="frontend")
 
     @app.get("/health")
     def health():

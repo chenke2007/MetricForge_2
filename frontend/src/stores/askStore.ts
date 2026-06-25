@@ -45,11 +45,6 @@ export const useAskStore = create<AskStore>((set) => ({
   stopStream: () =>
     set((state) => {
       if (!state.streaming) return state
-      return {
-        streaming: {
-          ...state.streaming,
-          visible: false,
-        },
-      }
+      return { streaming: null }
     }),
 }))
