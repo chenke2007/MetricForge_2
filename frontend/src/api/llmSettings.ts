@@ -84,9 +84,11 @@ export function useDeleteLlmSetting() {
 }
 
 export function useTestConnection() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) =>
       apiFetch<TestConnectionResult>(`/llm-settings/${id}/test`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['llmSettings'] }),
   })
 }
 

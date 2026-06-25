@@ -1,5 +1,5 @@
 import React from 'react'
-import { Card, Tag, Space, Button, Typography, Descriptions } from 'antd'
+import { Card, Tag, Space, Button, Typography, Descriptions, Popconfirm } from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -52,7 +52,9 @@ const LlmSettingCard: React.FC<Props> = ({ setting, onTest, onActivate, onEdit, 
             </Button>
           )}
           <Button size="small" icon={<EditOutlined />} onClick={() => onEdit(setting)} />
-          <Button size="small" danger icon={<DeleteOutlined />} onClick={() => onDelete(setting.id)} />
+          <Popconfirm title="确认删除此配置？" onConfirm={() => onDelete(setting.id)} okText="确认" cancelText="取消">
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
         </Space>
       }
     >
