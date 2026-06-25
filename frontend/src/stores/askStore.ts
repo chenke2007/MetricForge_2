@@ -2,19 +2,18 @@ import { create } from 'zustand'
 
 export interface StreamingState {
   visible: boolean
-  messageId: string
+  messageId: number
   content: string
 }
 
 interface AskStore {
-  currentSessionId: string | null
+  currentSessionId: number | null
   streaming: StreamingState | null
 
-  setCurrentSession: (id: string | null) => void
-  startStream: (messageId: string) => void
+  setCurrentSession: (id: number | null) => void
+  startStream: (messageId: number) => void
   appendToken: (delta: string) => void
-  endStream: () => void
-  failStream: () => void
+  stopStream: () => void
 }
 
 export const useAskStore = create<AskStore>((set) => ({
@@ -43,18 +42,7 @@ export const useAskStore = create<AskStore>((set) => ({
       }
     }),
 
-  endStream: () =>
-    set((state) => {
-      if (!state.streaming) return state
-      return {
-        streaming: {
-          ...state.streaming,
-          visible: false,
-        },
-      }
-    }),
-
-  failStream: () =>
+  stopStream: () =>
     set((state) => {
       if (!state.streaming) return state
       return {

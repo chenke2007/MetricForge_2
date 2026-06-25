@@ -9,8 +9,8 @@ import { useAskSessions, useCreateSession, useDeleteSession } from '../api/askSe
 import type { AskSession } from '../api/askSessions'
 
 interface SessionListProps {
-  currentId: string | null
-  onSelect: (id: string) => void
+  currentId: number | null
+  onSelect: (id: number | null) => void
 }
 
 const SessionList: React.FC<SessionListProps> = ({ currentId, onSelect }) => {
@@ -19,19 +19,18 @@ const SessionList: React.FC<SessionListProps> = ({ currentId, onSelect }) => {
   const deleteSession = useDeleteSession()
 
   const handleCreate = () => {
-    createSession.mutate({} as any, {
+    createSession.mutate(undefined, {
       onSuccess: (session) => {
         onSelect(session.id)
       },
     })
   }
 
-  const handleDelete = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation()
+  const handleDelete = (sessionId: number) => {
     deleteSession.mutate(sessionId, {
       onSuccess: () => {
         if (currentId === sessionId) {
-          onSelect('')
+          onSelect(null)
         }
       },
     })
@@ -95,7 +94,7 @@ const SessionList: React.FC<SessionListProps> = ({ currentId, onSelect }) => {
               </div>
               <Popconfirm
                 title="确定删除此对话？"
-                onConfirm={(e) => handleDelete(e as any, item.id)}
+                onConfirm={() => handleDelete(item.id)}
                 okText="确定"
                 cancelText="取消"
               >

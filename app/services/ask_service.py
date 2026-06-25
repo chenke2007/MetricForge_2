@@ -164,8 +164,20 @@ class AskService:
         api_key = decrypt_key(active_setting.api_key)
         client = OpenAI(base_url=f"{active_setting.base_url}/v1", api_key=api_key, timeout=120)
 
+        # Get last user message for schema context
+        last_user_msg = (
+            db.query(AskMessage)
+            .filter(AskMessage.session_id == session_id)
+            .filter(AskMessage.id <= after_message_id)
+            .filter(AskMessage.role == "user")
+            .filter(AskMessage.status == "completed")
+            .order_by(AskMessage.created_at.desc())
+            .first()
+        )
+        user_query = last_user_msg.content if last_user_msg else ""
+
         # Build system prompt with schema context
-        schema_context = self._schema_context.build_context("", db)
+        schema_context = self._schema_context.build_context(user_query, db)
         system_content = "你是 MetricForge 数据分析助手。\n" \
                          "你是一个融资租赁数据平台的 SQL 分析助手。" \
                          "请基于数据仓库中的表和字段回答用户问题。\n" \
@@ -259,7 +271,7 @@ class AskService:
             return "LLM 响应超时，请稍后重试"
         if "rate" in msg or "quota" in msg:
             return "LLM 请求频率过高，请稍后重试"
-        return "LLM 调用失败，请检查配置或稍后重试"
+        return f"LLM 调用失败（{type(e).__name__}），请检查配置或稍后重试"
 
     @staticmethod
     def _sse_event(event: str, data: dict) -> str:

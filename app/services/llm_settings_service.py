@@ -122,7 +122,7 @@ class LlmSettingsService:
             return "模型不存在，请检查模型名"
         if "timeout" in msg or "timed out" in msg:
             return "连接超时，请检查网络或服务器状态"
-        return "连接测试失败，请检查配置"
+        return f"连接测试失败（{type(e).__name__}），请检查配置"
 
     def _to_response(self, s: LlmSetting) -> dict:
         return {

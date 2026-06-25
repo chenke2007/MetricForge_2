@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { message, Layout, Typography } from 'antd'
 import { ClearOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
@@ -20,10 +20,7 @@ const AskWorkbenchPage: React.FC = () => {
   const streaming = useAskStore((s) => s.streaming)
   const startStream = useAskStore((s) => s.startStream)
   const appendToken = useAskStore((s) => s.appendToken)
-  const endStream = useAskStore((s) => s.endStream)
-  const failStream = useAskStore((s) => s.failStream)
-
-  const abortRef = useRef<AbortController | null>(null)
+  const stopStream = useAskStore((s) => s.stopStream)
 
   const { data: messages, isLoading: messagesLoading } =
     useAskMessages(currentSessionId)
@@ -54,7 +51,6 @@ const AskWorkbenchPage: React.FC = () => {
         // Start SSE stream
         startStream(assistantId)
         const controller = new AbortController()
-        abortRef.current = controller
 
         const token = Date.now().toString(36)
         const response = await fetch(
@@ -91,7 +87,7 @@ const AskWorkbenchPage: React.FC = () => {
                   appendToken(data.delta)
                 } else if (currentEvent === 'error') {
                   const errMsg = data.error || data.detail || '流式响应出错'
-                  endStream()
+                  stopStream()
                   message.error(errMsg)
                   qc.invalidateQueries({
                     queryKey: ['askSessions', currentSessionId],
@@ -111,7 +107,7 @@ const AskWorkbenchPage: React.FC = () => {
           }
         }
 
-        endStream()
+        stopStream()
         qc.invalidateQueries({
           queryKey: ['askSessions', currentSessionId],
         })
@@ -121,11 +117,11 @@ const AskWorkbenchPage: React.FC = () => {
         qc.invalidateQueries({ queryKey: ['askSessions'] })
       } catch (err: any) {
         if (err.name === 'AbortError') return
-        failStream()
+        stopStream()
         message.error('发送失败，请重试')
       }
     },
-    [currentSessionId, createMessage, qc, startStream, appendToken, endStream, failStream]
+    [currentSessionId, createMessage, qc, startStream, appendToken, stopStream]
   )
 
   return (

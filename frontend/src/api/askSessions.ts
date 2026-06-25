@@ -4,7 +4,7 @@ import { apiFetch } from './client'
 /* ─── Types ─── */
 
 export interface AskSession {
-  id: string
+  id: number
   title: string
   created_at: string
   updated_at: string
@@ -12,8 +12,8 @@ export interface AskSession {
 }
 
 export interface AskMessage {
-  id: string
-  session_id: string
+  id: number
+  session_id: number
   role: 'user' | 'assistant'
   content: string
   created_at: string
@@ -24,7 +24,7 @@ export interface CreateSessionInput {
 }
 
 export interface CreateMessageInput {
-  sessionId: string
+  sessionId: number
   content: string
 }
 
@@ -39,19 +39,12 @@ function fetchSessions(): Promise<AskSession[]> {
   return apiFetch<AskSession[]>('/ask/sessions')
 }
 
-function fetchSession(id: string): Promise<AskSession> {
+function fetchSession(id: number) {
   return apiFetch<AskSession>(`/ask/sessions/${id}`)
 }
 
-function fetchMessages(sessionId: string): Promise<AskMessage[]> {
+function fetchMessages(sessionId: number) {
   return apiFetch<AskMessage[]>(`/ask/sessions/${sessionId}/messages`)
-}
-
-function createSession(data: CreateSessionInput): Promise<AskSession> {
-  return apiFetch<AskSession>('/ask/sessions', {
-    method: 'POST',
-    body: JSON.stringify({ title: data.title || '新对话' }),
-  })
 }
 
 function createMessage(data: CreateMessageInput): Promise<CreateMessageResult> {
@@ -64,7 +57,7 @@ function createMessage(data: CreateMessageInput): Promise<CreateMessageResult> {
   )
 }
 
-function deleteSession(id: string): Promise<void> {
+function deleteSession(id: number): Promise<void> {
   return apiFetch<void>(`/ask/sessions/${id}`, {
     method: 'DELETE',
   })
@@ -79,7 +72,7 @@ export function useAskSessions() {
   })
 }
 
-export function useAskSession(id: string | null) {
+export function useAskSession(id: number | null) {
   return useQuery({
     queryKey: ['askSessions', id],
     queryFn: () => fetchSession(id!),
@@ -87,7 +80,7 @@ export function useAskSession(id: string | null) {
   })
 }
 
-export function useAskMessages(sessionId: string | null) {
+export function useAskMessages(sessionId: number | null) {
   return useQuery({
     queryKey: ['askSessions', sessionId, 'messages'],
     queryFn: () => fetchMessages(sessionId!),
@@ -98,7 +91,11 @@ export function useAskMessages(sessionId: string | null) {
 export function useCreateSession() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: createSession,
+    mutationFn: (data?: CreateSessionInput) =>
+      apiFetch<AskSession>('/ask/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ title: data?.title || '新对话' }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['askSessions'] })
     },
