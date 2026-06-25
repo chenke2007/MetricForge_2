@@ -4,6 +4,8 @@ import {
   DatabaseOutlined,
   DashboardOutlined,
   GithubOutlined,
+  SettingOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 
@@ -19,6 +21,16 @@ const menuItems = [
     key: '/metadata/jobs',
     icon: <DatabaseOutlined />,
     label: '采集任务',
+  },
+  {
+    key: '/llm-settings',
+    icon: <SettingOutlined />,
+    label: 'LLM 配置',
+  },
+  {
+    key: '/ask',
+    icon: <MessageOutlined />,
+    label: 'AI 问数',
   },
 ]
 
