@@ -17,6 +17,7 @@ const AskWorkbenchPage: React.FC = () => {
   const qc = useQueryClient()
   const currentSessionId = useAskStore((s) => s.currentSessionId)
   const setCurrentSession = useAskStore((s) => s.setCurrentSession)
+  const streaming = useAskStore((s) => s.streaming)
   const startStream = useAskStore((s) => s.startStream)
   const appendToken = useAskStore((s) => s.appendToken)
   const endStream = useAskStore((s) => s.endStream)
@@ -89,7 +90,17 @@ const AskWorkbenchPage: React.FC = () => {
                 if (currentEvent === 'token' && data.delta) {
                   appendToken(data.delta)
                 } else if (currentEvent === 'error') {
-                  // Stream error - will be handled by done below
+                  const errMsg = data.error || data.detail || '流式响应出错'
+                  endStream()
+                  message.error(errMsg)
+                  qc.invalidateQueries({
+                    queryKey: ['askSessions', currentSessionId],
+                  })
+                  qc.invalidateQueries({
+                    queryKey: ['askSessions', currentSessionId, 'messages'],
+                  })
+                  qc.invalidateQueries({ queryKey: ['askSessions'] })
+                  return // exit cleanly
                 }
               } catch {
                 // ignore parse errors
@@ -152,7 +163,7 @@ const AskWorkbenchPage: React.FC = () => {
                 background: '#fff',
               }}
             >
-              <AskInput onSend={handleSend} loading={createMessage.isPending} />
+              <AskInput onSend={handleSend} loading={createMessage.isPending} disabled={streaming?.visible ?? false} />
             </div>
           </>
         ) : (

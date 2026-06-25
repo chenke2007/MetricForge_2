@@ -7,14 +7,15 @@ const { TextArea } = Input
 interface AskInputProps {
   onSend: (content: string) => void
   loading?: boolean
+  disabled?: boolean
 }
 
-const AskInput: React.FC<AskInputProps> = ({ onSend, loading }) => {
+const AskInput: React.FC<AskInputProps> = ({ onSend, loading, disabled }) => {
   const [value, setValue] = useState('')
 
   const handleSend = () => {
     const trimmed = value.trim()
-    if (!trimmed || loading) return
+    if (!trimmed || loading || disabled) return
     onSend(trimmed)
     setValue('')
   }
@@ -35,13 +36,14 @@ const AskInput: React.FC<AskInputProps> = ({ onSend, loading }) => {
         placeholder="输入你的问题，例如：近30天新增客户数是多少？"
         autoSize={{ minRows: 2, maxRows: 6 }}
         style={{ flex: 1, resize: 'none' }}
+        disabled={disabled}
       />
       <Button
         type="primary"
         icon={<SendOutlined />}
         onClick={handleSend}
         loading={loading}
-        disabled={!value.trim() || loading}
+        disabled={!value.trim() || loading || disabled}
         style={{ height: 40, minWidth: 80 }}
       >
         发送

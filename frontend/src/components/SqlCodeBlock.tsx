@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { Typography, Button, Tooltip } from 'antd'
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 const { Text } = Typography
 
@@ -53,26 +55,14 @@ const SqlCodeBlock: React.FC<SqlCodeBlockProps> = ({ code, language }) => {
           />
         </Tooltip>
       </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: '12px 16px',
-          overflow: 'auto',
-          maxHeight: 400,
-        }}
+      <SyntaxHighlighter
+        language={language?.toLowerCase() || 'sql'}
+        style={oneDark}
+        customStyle={{ margin: 0, borderRadius: 0, fontSize: 13 }}
+        showLineNumbers
       >
-        <code
-          style={{
-            fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: '#d4d4d4',
-            whiteSpace: 'pre',
-          }}
-        >
-          {code}
-        </code>
-      </pre>
+        {code}
+      </SyntaxHighlighter>
     </div>
   )
 }

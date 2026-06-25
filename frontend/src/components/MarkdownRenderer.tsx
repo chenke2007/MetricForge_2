@@ -10,6 +10,16 @@ interface MarkdownRendererProps {
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   const components: Components = {
+    img() {
+      return null
+    },
+    a({ href, children }) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          {children}
+        </a>
+      )
+    },
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '')
       const isSql =
@@ -28,10 +38,11 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
 
       if (match) {
         return (
-          <SqlCodeBlock
-            code={String(children).replace(/\n$/, '')}
-            language={match![1]}
-          />
+          <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, overflow: 'auto' }}>
+            <code className={className} {...props}>
+              {String(children).replace(/\n$/, '')}
+            </code>
+          </pre>
         )
       }
 
