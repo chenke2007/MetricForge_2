@@ -92,6 +92,35 @@ class MetadataToolRegistry:
             }
             for t in self._tools.values()
         ]
+
+
+@dataclass
+class ToolCall:
+    name: str
+    arguments: dict
+
+
+@dataclass
+class ToolResult:
+    name: str
+    arguments: dict
+    result: Any | None
+    status: str  # "success" | "error"
+    error_message: str | None = None
+
+    @staticmethod
+    def success(name: str, arguments: dict, result: Any) -> "ToolResult":
+        return ToolResult(name=name, arguments=arguments, result=result, status="success")
+
+    @staticmethod
+    def error(name: str, arguments: dict, message: str) -> "ToolResult":
+        return ToolResult(
+            name=name,
+            arguments=arguments,
+            result=None,
+            status="error",
+            error_message=message,
+        )
 ```
 
 ### 3.2 Tool Router（`app/services/ask_tools/router.py`）
