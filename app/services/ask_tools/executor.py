@@ -19,7 +19,7 @@ class ToolExecutor:
             return ToolResult.error(
                 name=call.name,
                 arguments=call.arguments,
-                message=f"工具 {call.name} 未注册",
+                message=f"Tool {call.name} is not registered",
             )
         try:
             result = await tool.handler(db, **call.arguments)

@@ -10,14 +10,6 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client(tmp_path):
-    db_path = tmp_path / "test.db"
-    app = create_app(database_url=f"sqlite:///{db_path}")
-    with TestClient(app) as c:
-        yield c
-
-
-@pytest.fixture
 def active_setting(client):
     """Create and activate an LLM setting so ask endpoints work."""
     resp = client.post("/api/llm-settings", json={
@@ -36,17 +28,6 @@ def sample_ask_session(client, active_setting):
     """Create a sample ask session and return its id."""
     resp = client.post("/api/ask/sessions", json={})
     return resp.json()
-
-
-@pytest.fixture
-def db(client):
-    """Provide a db session for direct model manipulation in tests."""
-    from app.models.base import get_session
-    session = get_session()
-    try:
-        yield session
-    finally:
-        session.close()
 
 
 def test_messages_include_tool_calls(client, db, sample_ask_session):

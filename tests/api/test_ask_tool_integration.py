@@ -12,25 +12,6 @@ from app.models import AskSession, AskMessage, LlmSetting
 from app.services.key_encryption import encrypt as encrypt_key
 
 
-@pytest.fixture
-def client(tmp_path):
-    db_path = tmp_path / "test.db"
-    app = create_app(database_url=f"sqlite:///{db_path}")
-    with TestClient(app) as c:
-        yield c
-
-
-@pytest.fixture
-def db(client):
-    """Provide a db session for direct model manipulation in tests."""
-    from app.models.base import get_session
-    session = get_session()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
 def test_ask_flow_with_tool_calls(client: TestClient, db):
     """Verify SSE stream includes tool_call_start and tool_call_done events."""
     enc_key = encrypt_key("sk-test-key")

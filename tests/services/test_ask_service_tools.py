@@ -49,9 +49,10 @@ async def test_stream_response_calls_tools(db_session, session):
     mock_tool_call.name = "datasource_stats"
     mock_tool_call.arguments = {}
 
-    with patch.object(service, "_router") as mock_router:
-        mock_router.route = AsyncMock(return_value=[mock_tool_call])
+    mock_router = MagicMock()
+    mock_router.route = AsyncMock(return_value=[mock_tool_call])
 
+    with patch.object(service, "_init_router", return_value=mock_router):
         # Mock executor to return result
         mock_tool_result = MagicMock()
         mock_tool_result.name = "datasource_stats"

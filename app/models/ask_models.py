@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy.orm import relationship
 from .base import Base
 
 
@@ -51,6 +52,13 @@ class AskMessage(Base):
     tokens_prompt = Column(Integer, nullable=True)
     tokens_completion = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+    tool_calls = relationship(
+        "AskMessageToolCall",
+        backref="message",
+        cascade="all, delete-orphan",
+        order_by="AskMessageToolCall.created_at",
+    )
 
     __table_args__ = (
         CheckConstraint("role IN ('user', 'assistant', 'system')", name="ck_message_role"),

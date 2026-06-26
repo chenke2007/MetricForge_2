@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from ..models.base import get_session as get_db_session
 from ..services.ask_service import AskService
-from ..models import AskMessage, AskMessageToolCall
+from ..models import AskMessage
 
 router = APIRouter()
 service = AskService()
@@ -77,28 +77,7 @@ def get_messages(session_id: int, db=Depends(get_db)):
         .order_by(AskMessage.created_at)
         .all()
     )
-    result = []
-    for m in messages:
-        item = {
-            "id": m.id,
-            "session_id": m.session_id,
-            "role": m.role,
-            "content": m.content,
-            "status": m.status,
-            "error_message": m.error_message,
-            "tokens_prompt": m.tokens_prompt,
-            "tokens_completion": m.tokens_completion,
-            "created_at": m.created_at.isoformat(),
-        }
-        tool_calls = (
-            db.query(AskMessageToolCall)
-            .filter(AskMessageToolCall.message_id == m.id)
-            .order_by(AskMessageToolCall.created_at)
-            .all()
-        )
-        item["tool_calls"] = [tc.to_dict() for tc in tool_calls]
-        result.append(item)
-    return result
+    return [service._message_to_dict(m, include_tool_calls=True) for m in messages]
 
 
 @router.post("/sessions/{session_id}/messages", status_code=201)

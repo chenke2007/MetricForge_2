@@ -25,12 +25,9 @@ class AskService:
     def __init__(self):
         self._llm_settings_service = LlmSettingsService()
         self._schema_context = SchemaContextService()
-        self._router: ToolRouter | None = None
         self._executor = ToolExecutor(registry)
 
     def _init_router(self, client, model: str) -> ToolRouter:
-        if self._router is not None:
-            return self._router
         return ToolRouter(registry, client, model)
 
     # ---- Session CRUD ----
@@ -368,8 +365,8 @@ class AskService:
         }
 
     @staticmethod
-    def _message_to_dict(m: AskMessage) -> dict:
-        return {
+    def _message_to_dict(m: AskMessage, include_tool_calls: bool = False) -> dict:
+        result = {
             "id": m.id,
             "session_id": m.session_id,
             "role": m.role,
@@ -380,3 +377,6 @@ class AskService:
             "tokens_completion": m.tokens_completion,
             "created_at": m.created_at.isoformat(),
         }
+        if include_tool_calls:
+            result["tool_calls"] = [tc.to_dict() for tc in m.tool_calls]
+        return result

@@ -6,7 +6,7 @@ from app.services.ask_tools.base import MetadataToolRegistry, ToolCall
 
 logger = logging.getLogger(__name__)
 
-RULE_PATTERNS = [
+RULE_PATTERNS = (
     {
         "patterns": [r"数据源", r"接了几", r"几个库", r"多少.*数据源"],
         "tool": "datasource_stats",
@@ -27,7 +27,7 @@ RULE_PATTERNS = [
         "tool": "governance_ticket_stats",
         "args": {},
     },
-]
+)
 
 
 class ToolRouter:
@@ -53,7 +53,7 @@ class ToolRouter:
         return []
 
     def _extract_keyword(self, query: str) -> str | None:
-        # 简单提取：去掉常见疑问词后的第一个 2-4 字片段
+        # 简单提取：去掉常见疑问词后的第一个 2-6 字片段
         stop = {"什么", "怎么", "如何", "哪些", "哪个", "哪里", "有多少", "几个"}
         cleaned = query
         for s in stop:
