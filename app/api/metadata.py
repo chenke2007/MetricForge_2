@@ -40,6 +40,8 @@ def list_tables(
     datasource_id: int = Query(None, description="按数据源筛选"),
     schema_name: str = Query(None, description="按 Schema 筛选"),
     search: str = Query(None, description="按表名搜索"),
+    page: int = Query(1, ge=1, description="页码"),
+    per_page: int = Query(20, ge=1, le=100, description="每页条数"),
     db: Session = Depends(get_db),
 ):
     """列出表元数据"""
@@ -50,20 +52,33 @@ def list_tables(
         q = q.filter(TableMetadata.schema_name == schema_name)
     if search:
         q = q.filter(TableMetadata.table_name.like(f"%{search}%"))
-    tables = q.order_by(TableMetadata.schema_name, TableMetadata.table_name).all()
-    return [
-        {
-            "id": t.id,
-            "datasource_id": t.datasource_id,
-            "schema_name": t.schema_name,
-            "table_name": t.table_name,
-            "table_comment": t.table_comment,
-            "table_type": t.table_type,
-            "row_count_est": t.row_count_est,
-            "is_sensitive": t.is_sensitive,
-        }
-        for t in tables
-    ]
+
+    total = q.count()
+    offset = (page - 1) * per_page
+    total_pages = (total + per_page - 1) // per_page if total else 0
+    tables = q.order_by(TableMetadata.schema_name, TableMetadata.table_name).offset(offset).limit(per_page).all()
+
+    return {
+        "items": [
+            {
+                "id": t.id,
+                "datasource_id": t.datasource_id,
+                "schema_name": t.schema_name,
+                "table_name": t.table_name,
+                "table_comment": t.table_comment,
+                "table_type": t.table_type,
+                "row_count_est": t.row_count_est,
+                "is_sensitive": t.is_sensitive,
+            }
+            for t in tables
+        ],
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+        },
+    }
 
 
 @router.get("/tables/{table_id}")

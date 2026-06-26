@@ -54,6 +54,14 @@ METADATA_COLUMNS = {
         ("governance_tickets_created_count", "INTEGER NOT NULL DEFAULT 0"),
         ("change_summary", "TEXT"),
     ],
+    "llm_settings": [
+        ("api_key", "VARCHAR(500) NOT NULL DEFAULT ''"),
+    ],
+    "ask_messages": [
+        ("error_message", "TEXT"),
+        ("tokens_prompt", "INTEGER"),
+        ("tokens_completion", "INTEGER"),
+    ],
 }
 
 

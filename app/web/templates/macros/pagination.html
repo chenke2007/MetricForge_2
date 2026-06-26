@@ -1,0 +1,48 @@
+{% macro _page_url(base_path, filter_query, page) -%}
+{% set has_filters = filter_query and filter_query|length > 0 -%}
+{% if page > 1 -%}
+{% if has_filters %}{{ base_path }}?{{ filter_query }}&page={{ page }}{% else %}{{ base_path }}?page={{ page }}{% endif -%}
+{% else -%}
+{% if has_filters %}{{ base_path }}?{{ filter_query }}{% else %}{{ base_path }}{% endif -%}
+{% endif -%}
+{% endmacro %}
+
+{% macro render_pagination(pagination, base_path, filter_query) -%}
+{% if pagination.total_pages > 1 -%}
+{% set start_page = [pagination.page - 2, 1]|max -%}
+{% set end_page = [pagination.page + 2, pagination.total_pages]|min -%}
+<nav aria-label="分页">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            {% if pagination.has_prev -%}
+                <a class="page-link" href="{{ _page_url(base_path, filter_query, pagination.prev_page) }}">上一页</a>
+            {%- else -%}
+                <span class="page-link">上一页</span>
+            {%- endif %}
+        </li>
+
+        {% for p in range(start_page, end_page + 1) -%}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            {% if p == pagination.page -%}
+                <span class="page-link">{{ p }}</span>
+            {%- else -%}
+                <a class="page-link" href="{{ _page_url(base_path, filter_query, p) }}">{{ p }}</a>
+            {%- endif %}
+        </li>
+        {% endfor %}
+
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            {% if pagination.has_next -%}
+                <a class="page-link" href="{{ _page_url(base_path, filter_query, pagination.next_page) }}">下一页</a>
+            {%- else -%}
+                <span class="page-link">下一页</span>
+            {%- endif %}
+        </li>
+    </ul>
+    <div class="text-center text-muted small mt-2">
+        共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.total_pages }} 页
+        （{{ pagination.start_index }} - {{ pagination.end_index }}）
+    </div>
+</nav>
+{%- endif %}
+{% endmacro %}

@@ -2,8 +2,10 @@
 
 import json
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
+from fastapi import Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -263,6 +265,8 @@ def metadata_browse(
     request: Request,
     schema_name: str = None,
     search: str = None,
+    page: int = Query(1, ge=1, description="页码"),
+    per_page: int = Query(20, ge=1, le=100, description="每页条数"),
 ):
     """元数据浏览页面"""
     db = get_session()
@@ -272,9 +276,33 @@ def metadata_browse(
             q = q.filter(TableMetadata.schema_name == schema_name)
         if search:
             q = q.filter(TableMetadata.table_name.like(f"%{search}%"))
-        tables = q.order_by(TableMetadata.schema_name, TableMetadata.table_name).all()
+
+        total = q.count()
+        offset = (page - 1) * per_page
+        total_pages = (total + per_page - 1) // per_page if total else 0
+        tables = q.order_by(TableMetadata.schema_name, TableMetadata.table_name).offset(offset).limit(per_page).all()
 
         schemas = db.query(TableMetadata.schema_name).distinct().order_by(TableMetadata.schema_name).all()
+
+        filter_params = {}
+        if schema_name:
+            filter_params["schema_name"] = schema_name
+        if search:
+            filter_params["search"] = search
+        filter_query = urlencode(filter_params)
+
+        pagination = {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1 if page > 1 else None,
+            "next_page": page + 1 if page < total_pages else None,
+            "start_index": offset + 1,
+            "end_index": min(offset + per_page, total),
+        }
 
         return templates.TemplateResponse(
             request,
@@ -285,6 +313,8 @@ def metadata_browse(
                 "schemas": [s[0] for s in schemas if s[0]],
                 "current_schema": schema_name,
                 "search": search,
+                "pagination": pagination,
+                "filter_query": filter_query,
             },
         )
     finally:
@@ -365,7 +395,13 @@ def field_semantic_list(request: Request):
 
 
 @router.get("/governance", response_class=HTMLResponse)
-def governance_list(request: Request, status: str = None, source: str = None):
+def governance_list(
+    request: Request,
+    status: str = None,
+    source: str = None,
+    page: int = Query(1, ge=1, description="页码"),
+    per_page: int = Query(20, ge=1, le=100, description="每页条数"),
+):
     """治理待办页面"""
     db = get_session()
     try:
@@ -374,11 +410,43 @@ def governance_list(request: Request, status: str = None, source: str = None):
             q = q.filter(GovernanceTicket.status == status)
         if source:
             q = q.filter(GovernanceTicket.source == source)
-        tickets = q.order_by(GovernanceTicket.created_at.desc()).all()
+
+        total = q.count()
+        offset = (page - 1) * per_page
+        total_pages = (total + per_page - 1) // per_page if total else 0
+        tickets = q.order_by(GovernanceTicket.created_at.desc()).offset(offset).limit(per_page).all()
+
+        filter_params = {}
+        if status:
+            filter_params["status"] = status
+        if source:
+            filter_params["source"] = source
+        filter_query = urlencode(filter_params)
+
+        pagination = {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "prev_page": page - 1 if page > 1 else None,
+            "next_page": page + 1 if page < total_pages else None,
+            "start_index": offset + 1,
+            "end_index": min(offset + per_page, total),
+        }
+
         return templates.TemplateResponse(
             request,
             "governance/list.html",
-            {"request": request, "tickets": tickets, "current_status": status, "current_source": source},
+            {
+                "request": request,
+                "tickets": tickets,
+                "current_status": status,
+                "current_source": source,
+                "pagination": pagination,
+                "filter_query": filter_query,
+            },
         )
     finally:
         db.close()

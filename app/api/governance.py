@@ -22,6 +22,8 @@ def list_tickets(
     ticket_type: str = Query(None, description="按类型筛选"),
     priority: str = Query(None, description="按优先级筛选"),
     source: str = Query(None, description="按来源筛选"),
+    page: int = Query(1, ge=1, description="页码"),
+    per_page: int = Query(20, ge=1, le=100, description="每页条数"),
     db: Session = Depends(get_db),
 ):
     """列出治理待办"""
@@ -34,21 +36,34 @@ def list_tickets(
         q = q.filter(GovernanceTicket.priority == priority)
     if source:
         q = q.filter(GovernanceTicket.source == source)
-    tickets = q.order_by(GovernanceTicket.created_at.desc()).all()
-    return [
-        {
-            "id": t.id,
-            "ticket_type": t.ticket_type,
-            "title": t.title,
-            "source": t.source,
-            "related_object_type": t.related_object_type,
-            "priority": t.priority,
-            "status": t.status,
-            "assignee": t.assignee,
-            "created_at": str(t.created_at),
-        }
-        for t in tickets
-    ]
+
+    total = q.count()
+    offset = (page - 1) * per_page
+    total_pages = (total + per_page - 1) // per_page if total else 0
+    tickets = q.order_by(GovernanceTicket.created_at.desc()).offset(offset).limit(per_page).all()
+
+    return {
+        "items": [
+            {
+                "id": t.id,
+                "ticket_type": t.ticket_type,
+                "title": t.title,
+                "source": t.source,
+                "related_object_type": t.related_object_type,
+                "priority": t.priority,
+                "status": t.status,
+                "assignee": t.assignee,
+                "created_at": str(t.created_at),
+            }
+            for t in tickets
+        ],
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+        },
+    }
 
 
 @router.get("/{ticket_id}")

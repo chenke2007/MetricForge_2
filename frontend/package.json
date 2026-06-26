@@ -16,17 +16,23 @@
     "antd": "^5.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.26.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.3.1",
+    "jsdom": "^24.1.0",
     "typescript": "^5.5.3",
     "vite": "^5.4.0",
-    "vitest": "^2.0.5",
-    "@testing-library/react": "^16.0.0",
-    "@testing-library/jest-dom": "^6.4.8",
-    "jsdom": "^24.1.0"
+    "vitest": "^2.0.5"
   }
 }
