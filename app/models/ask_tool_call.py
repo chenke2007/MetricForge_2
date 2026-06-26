@@ -35,5 +35,5 @@ class AskMessageToolCall(Base):
             "result": self.result,
             "status": self.status,
             "error_message": self.error_message,
-            "created_at": str(self.created_at) if self.created_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }

@@ -71,3 +71,6 @@ def test_messages_include_tool_calls(client, db, sample_ask_session):
     assert len(data) == 1
     assert len(data[0]["tool_calls"]) == 1
     assert data[0]["tool_calls"][0]["tool_name"] == "datasource_stats"
+    assert data[0]["tool_calls"][0]["arguments"] == "{}"
+    assert data[0]["tool_calls"][0]["result"] == '{"total": 2}'
+    assert data[0]["tool_calls"][0]["status"] == "success"
