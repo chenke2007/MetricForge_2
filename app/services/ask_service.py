@@ -8,10 +8,13 @@ from typing import AsyncGenerator, Optional
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from ..models import AskSession, AskMessage, LlmSetting
+from ..models import AskMessage, AskSession, LlmSetting, AskMessageToolCall
 from .llm_settings_service import LlmSettingsService
 from .schema_context_service import SchemaContextService
 from .key_encryption import decrypt as decrypt_key
+from .ask_tools.registry import registry
+from .ask_tools.router import ToolRouter
+from .ask_tools.executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,11 @@ class AskService:
     def __init__(self):
         self._llm_settings_service = LlmSettingsService()
         self._schema_context = SchemaContextService()
+        self._router: ToolRouter | None = None
+        self._executor = ToolExecutor(registry)
+
+    def _init_router(self, client, model: str) -> ToolRouter:
+        return ToolRouter(registry, client, model)
 
     # ---- Session CRUD ----
 
@@ -176,15 +184,46 @@ class AskService:
         )
         user_query = last_user_msg.content if last_user_msg else ""
 
-        # Build system prompt with schema context
+        # Tool routing
+        router = self._init_router(client, active_setting.model_name)
+        tool_calls = await router.route(user_query)
+
+        tool_results = []
+        if tool_calls:
+            yield self._sse_event(
+                "tool_call_start",
+                {"message_id": after_message_id, "tool_names": [c.name for c in tool_calls]},
+            )
+            tool_results = await self._executor.execute(tool_calls, db)
+            # Persist tool calls
+            for tr in tool_results:
+                tc = AskMessageToolCall(
+                    message_id=after_message_id,
+                    tool_name=tr.name,
+                    arguments=json.dumps(tr.arguments, ensure_ascii=False),
+                    result=json.dumps(tr.result, ensure_ascii=False) if tr.result is not None else None,
+                    status=tr.status,
+                    error_message=tr.error_message,
+                )
+                db.add(tc)
+            db.commit()
+            persisted_calls = (
+                db.query(AskMessageToolCall)
+                .filter(AskMessageToolCall.message_id == after_message_id)
+                .order_by(AskMessageToolCall.created_at)
+                .all()
+            )
+            yield self._sse_event(
+                "tool_call_done",
+                {
+                    "message_id": after_message_id,
+                    "tool_calls": [tc.to_dict() for tc in persisted_calls],
+                },
+            )
+
+        # Build system prompt with tool results and schema context
         schema_context = self._schema_context.build_context(user_query, db)
-        system_content = "你是 MetricForge 数据分析助手。\n" \
-                         "你是一个融资租赁数据平台的 SQL 分析助手。" \
-                         "请基于数据仓库中的表和字段回答用户问题。\n" \
-                         "回答中可以通过 SQL 代码块展示查询逻辑，但不要直接执行任何 SQL。\n" \
-                         "使用中文回答。"
-        if schema_context:
-            system_content += "\n\n" + schema_context
+        system_content = self._build_system_prompt(schema_context, tool_results)
 
         system_message = {
             "role": "system",
@@ -219,47 +258,67 @@ class AskService:
         tokens_completion = None
 
         try:
-            stream = client.chat.completions.create(
-                model=active_setting.model_name,
-                messages=openai_messages,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    delta = chunk.choices[0].delta.content
-                    accumulated += delta
-                    yield self._sse_event("token", {"delta": delta})
-
-                if chunk.usage:
-                    tokens_prompt = chunk.usage.prompt_tokens
-                    tokens_completion = chunk.usage.completion_tokens
-
-            # Success - save accumulated content
-            assistant_msg.content = accumulated
-            assistant_msg.status = "completed"
-            if tokens_prompt:
-                assistant_msg.tokens_prompt = tokens_prompt
-            if tokens_completion:
-                assistant_msg.tokens_completion = tokens_completion
-            db.commit()
-
-            yield self._sse_event("done", {
-                "message_id": after_message_id,
-                "tokens_prompt": tokens_prompt,
-                "tokens_completion": tokens_completion,
-            })
+            async for event in self._call_llm_stream(
+                client, active_setting.model_name, openai_messages, assistant_msg, db
+            ):
+                yield event
+                # Parse the last event to extract done info
+                if "event: done" in event:
+                    # Extract tokens from the done event if needed
+                    pass
 
         except Exception as e:
             logger.exception("LLM 流式调用失败")
             error_msg = self._sanitize_llm_error(e)
             assistant_msg.status = "failed"
             assistant_msg.error_message = error_msg
-            if accumulated:
-                assistant_msg.content = accumulated
             db.commit()
             yield self._sse_event("error", {"message_id": after_message_id, "error": error_msg})
+
+    async def _call_llm_stream(
+        self,
+        client: OpenAI,
+        model: str,
+        messages: list[dict],
+        assistant_msg: AskMessage,
+        db: Session,
+    ) -> AsyncGenerator[str, None]:
+        """Stream LLM response and persist results."""
+        accumulated = ""
+        tokens_prompt = None
+        tokens_completion = None
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                delta = chunk.choices[0].delta.content
+                accumulated += delta
+                yield self._sse_event("token", {"delta": delta})
+
+            if chunk.usage:
+                tokens_prompt = chunk.usage.prompt_tokens
+                tokens_completion = chunk.usage.completion_tokens
+
+        # Success - save accumulated content
+        assistant_msg.content = accumulated
+        assistant_msg.status = "completed"
+        if tokens_prompt:
+            assistant_msg.tokens_prompt = tokens_prompt
+        if tokens_completion:
+            assistant_msg.tokens_completion = tokens_completion
+        db.commit()
+
+        yield self._sse_event("done", {
+            "message_id": assistant_msg.id,
+            "tokens_prompt": tokens_prompt,
+            "tokens_completion": tokens_completion,
+        })
 
     def _sanitize_llm_error(self, e: Exception) -> str:
         msg = str(e).lower()
@@ -272,6 +331,22 @@ class AskService:
         if "rate" in msg or "quota" in msg:
             return "LLM 请求频率过高，请稍后重试"
         return f"LLM 调用失败（{type(e).__name__}），请检查配置或稍后重试"
+
+    def _build_system_prompt(self, schema_context: str, tool_results: list) -> str:
+        parts = [
+            "你是 MetricForge 数据分析助手。",
+            "你是一个融资租赁数据平台的 SQL 分析助手。",
+            "请基于数据仓库中的表和字段回答用户问题。",
+            "回答中可以通过 SQL 代码块展示查询逻辑，但不要直接执行任何 SQL。",
+            "使用中文回答。",
+        ]
+        if schema_context:
+            parts.append("\n" + schema_context)
+        if tool_results:
+            parts.append("\n## 元数据查询结果\n")
+            for tr in tool_results:
+                parts.append(f"### {tr.name}\n```json\n{json.dumps(tr.result, ensure_ascii=False)}\n```\n")
+        return "\n".join(parts)
 
     @staticmethod
     def _sse_event(event: str, data: dict) -> str:
