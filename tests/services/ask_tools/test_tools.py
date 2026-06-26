@@ -1,6 +1,5 @@
 # tests/services/ask_tools/test_tools.py
 import pytest
-from sqlalchemy.orm import Session
 
 from app.models import (
     DatasourceConfig,
