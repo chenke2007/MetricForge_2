@@ -29,6 +29,8 @@ class AskService:
         self._executor = ToolExecutor(registry)
 
     def _init_router(self, client, model: str) -> ToolRouter:
+        if self._router is not None:
+            return self._router
         return ToolRouter(registry, client, model)
 
     # ---- Session CRUD ----
@@ -262,10 +264,6 @@ class AskService:
                 client, active_setting.model_name, openai_messages, assistant_msg, db
             ):
                 yield event
-                # Parse the last event to extract done info
-                if "event: done" in event:
-                    # Extract tokens from the done event if needed
-                    pass
 
         except Exception as e:
             logger.exception("LLM 流式调用失败")
@@ -288,22 +286,27 @@ class AskService:
         tokens_prompt = None
         tokens_completion = None
 
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
 
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                delta = chunk.choices[0].delta.content
-                accumulated += delta
-                yield self._sse_event("token", {"delta": delta})
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    delta = chunk.choices[0].delta.content
+                    accumulated += delta
+                    yield self._sse_event("token", {"delta": delta})
 
-            if chunk.usage:
-                tokens_prompt = chunk.usage.prompt_tokens
-                tokens_completion = chunk.usage.completion_tokens
+                if chunk.usage:
+                    tokens_prompt = chunk.usage.prompt_tokens
+                    tokens_completion = chunk.usage.completion_tokens
+
+        except Exception:
+            assistant_msg.content = accumulated
+            raise
 
         # Success - save accumulated content
         assistant_msg.content = accumulated
