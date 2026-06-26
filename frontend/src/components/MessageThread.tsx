@@ -4,6 +4,7 @@ import type { AskMessage } from '../api/askSessions'
 import UserMessage from './UserMessage'
 import AssistantMessage from './AssistantMessage'
 import StreamingMessage from './StreamingMessage'
+import ToolCallIndicator from './ToolCallIndicator'
 import { useAskStore } from '../stores/askStore'
 
 interface MessageThreadProps {
@@ -63,11 +64,15 @@ const MessageThread: React.FC<MessageThreadProps> = ({
                 timestamp={msg.created_at}
               />
             ) : (
-              <AssistantMessage
-                key={msg.id}
-                content={msg.content}
-                timestamp={msg.created_at}
-              />
+              <div key={msg.id}>
+                {msg.tool_calls && msg.tool_calls.length > 0 && (
+                  <ToolCallIndicator tool_calls={msg.tool_calls} />
+                )}
+                <AssistantMessage
+                  content={msg.content}
+                  timestamp={msg.created_at}
+                />
+              </div>
             )
           )}
         </div>
