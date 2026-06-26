@@ -32,4 +32,4 @@ openai>=1.0.0
 # === 开发工具 ===
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
-# python-dotenv>=1.0.0  # 已由 pydantic-settings 覆盖
+python-dotenv>=1.0.0

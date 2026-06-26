@@ -81,8 +81,10 @@ cp .env.example .env
 # Oracle 连接密码（可选，仅连接 Oracle 时需要）
 ORACLE_PASSWORD=your_password
 
-# 密码加密密钥（可选，留空则自动生成）
-METRICFORGE_ENCRYPTION_KEY=
+# LLM API Key 加密密钥（推荐设置，开发环境可直接使用以下测试值）
+# 注意：生产环境请务必更换为自定义密钥！
+# 警告：更换此密钥后，数据库中已有的 LLM 配置将无法解密，需删除后重新创建。
+METRICFORGE_ENC_KEY=change-me-to-a-strong-local-secret
 
 # 数据库连接（默认 SQLite，可用于开发）
 METRICFORGE_DB_URL=sqlite:///./data/metricforge.db

@@ -58,6 +58,14 @@ class SPAStaticFiles(StaticFiles):
 
 def create_app(config_path: str | None = None, database_url: str | None = None) -> FastAPI:
     """Application factory."""
+
+    # Load .env into os.environ before any service reads env vars (e.g. METRICFORGE_ENC_KEY).
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         start_metadata_scheduler(app)

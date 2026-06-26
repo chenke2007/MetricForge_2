@@ -125,11 +125,16 @@ class LlmSettingsService:
         return f"连接测试失败（{type(e).__name__}），请检查配置"
 
     def _to_response(self, s: LlmSetting) -> dict:
+        try:
+            decrypted = decrypt(s.api_key)
+            masked = mask_api_key(decrypted)
+        except Exception:
+            masked = "***INVALID KEY***"
         return {
             "id": s.id,
             "name": s.name,
             "base_url": s.base_url,
-            "api_key_masked": mask_api_key(decrypt(s.api_key)),
+            "api_key_masked": masked,
             "model_name": s.model_name,
             "is_active": bool(s.is_active),
             "last_tested_at": s.last_tested_at.isoformat() if s.last_tested_at else None,
