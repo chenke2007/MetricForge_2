@@ -11,12 +11,28 @@ export interface AskSession {
   message_count?: number
 }
 
+export interface ToolCallRecord {
+  id: number
+  message_id: number
+  tool_name: string
+  arguments: string
+  result: string | null
+  status: string
+  error_message: string | null
+  created_at: string
+}
+
 export interface AskMessage {
   id: number
   session_id: number
   role: 'user' | 'assistant'
   content: string
+  status: string
+  error_message?: string | null
+  tokens_prompt?: number | null
+  tokens_completion?: number | null
   created_at: string
+  tool_calls?: ToolCallRecord[]
 }
 
 export interface CreateSessionInput {
