@@ -4,12 +4,14 @@ import { ClearOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import SessionList from '../components/SessionList'
 import MessageThread from '../components/MessageThread'
+import ToolCallIndicator from '../components/ToolCallIndicator'
 import AskInput from '../components/AskInput'
 import {
   useAskMessages,
   useCreateMessage,
 } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
+import type { ToolCallRecord } from '../api/askSessions'
 
 const { Sider, Content } = Layout
 
@@ -25,6 +27,7 @@ const AskWorkbenchPage: React.FC = () => {
     useAskMessages(currentSessionId)
   const createMessage = useCreateMessage()
   const [streamingActive, setStreamingActive] = useState(false)
+  const [toolCalls, setToolCalls] = useState<ToolCallRecord[] | null>(null)
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -64,6 +67,7 @@ const AskWorkbenchPage: React.FC = () => {
             es.close()
             stopStream()
             setStreamingActive(false)
+            setToolCalls(null)
             qc.invalidateQueries({
               queryKey: ['askSessions', currentSessionId],
             })
@@ -78,6 +82,35 @@ const AskWorkbenchPage: React.FC = () => {
             try {
               const data = JSON.parse((e as MessageEvent).data)
               if (data.delta) appendToken(data.delta)
+            } catch {
+              // ignore parse errors
+            }
+          })
+
+          es.addEventListener('tool_call_start', (e) => {
+            try {
+              const data = JSON.parse((e as MessageEvent).data)
+              setToolCalls(
+                data.tool_names.map((name: string, idx: number) => ({
+                  id: idx,
+                  message_id: data.message_id,
+                  tool_name: name,
+                  arguments: '{}',
+                  result: null,
+                  status: 'running',
+                  error_message: null,
+                  created_at: new Date().toISOString(),
+                }))
+              )
+            } catch {
+              // ignore parse errors
+            }
+          })
+
+          es.addEventListener('tool_call_done', (e) => {
+            try {
+              const data = JSON.parse((e as MessageEvent).data)
+              setToolCalls(data.tool_calls)
             } catch {
               // ignore parse errors
             }
@@ -141,6 +174,7 @@ const AskWorkbenchPage: React.FC = () => {
               messages={messages ?? []}
               isLoading={messagesLoading}
             />
+            {toolCalls && <ToolCallIndicator tool_calls={toolCalls} />}
             <div
               style={{
                 borderTop: '1px solid #f0f0f0',
