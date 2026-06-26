@@ -143,7 +143,7 @@ const AskWorkbenchPage: React.FC = () => {
         message.error('发送失败，请重试')
       }
     },
-    [currentSessionId, createMessage, qc, startStream, appendToken, stopStream, setStreamingActive]
+    [currentSessionId, createMessage, qc, startStream, appendToken, stopStream, setStreamingActive, setToolCalls]
   )
 
   return (
