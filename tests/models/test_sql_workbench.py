@@ -1,5 +1,4 @@
 import pytest
-from datetime import datetime
 from app.models.sql_workbench import SqlDraft, SqlExecutionHistory
 
 
