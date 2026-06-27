@@ -59,7 +59,7 @@ const SqlWorkbenchPage: React.FC = () => {
   if (!datasources || datasources.length === 0) {
     return (
       <Empty description="暂无可用数据源，请先配置">
-        <Button type="primary" onClick={() => window.location.href = '/'}>
+        <Button type="primary" onClick={() => window.location.href = '/web/datasources'}>
           去配置数据源
         </Button>
       </Empty>

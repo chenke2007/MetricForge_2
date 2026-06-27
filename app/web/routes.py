@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi import Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import joinedload
@@ -107,6 +107,12 @@ def _metadata_schedule_rows(db) -> list[dict]:
             }
         )
     return rows
+
+
+@router.get("", response_class=RedirectResponse)
+def web_root():
+    """重定向 /web 到 /web/dashboard"""
+    return RedirectResponse(url="/web/dashboard")
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
