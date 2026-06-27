@@ -10,6 +10,7 @@ from .governance_ticket import GovernanceTicket
 from .metadata_job import MetadataCollectionJob
 from .ask_models import LlmSetting, AskSession, AskMessage
 from .ask_tool_call import AskMessageToolCall
+from .sql_workbench import SqlDraft, SqlExecutionHistory
 
 __all__ = [
     "Base",
@@ -32,4 +33,6 @@ __all__ = [
     "AskSession",
     "AskMessage",
     "AskMessageToolCall",
+    "SqlDraft",
+    "SqlExecutionHistory",
 ]
