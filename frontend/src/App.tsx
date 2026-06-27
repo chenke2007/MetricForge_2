@@ -6,6 +6,7 @@ import Layout from './components/Layout'
 import MetadataJobsPage from './pages/MetadataJobsPage'
 import LlmSettingsPage from './pages/LlmSettingsPage'
 import AskWorkbenchPage from './pages/AskWorkbenchPage'
+import SqlWorkbenchPage from './pages/SqlWorkbenchPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +28,7 @@ function App() {
             <Route path="/metadata/jobs" element={<MetadataJobsPage />} />
             <Route path="/llm-settings" element={<LlmSettingsPage />} />
             <Route path="/ask" element={<AskWorkbenchPage />} />
+            <Route path="/sql-workbench" element={<SqlWorkbenchPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
