@@ -339,6 +339,14 @@ class AskService:
             "请基于数据仓库中的表和字段回答用户问题。",
             "回答中可以通过 SQL 代码块展示查询逻辑，但不要直接执行任何 SQL。",
             "使用中文回答。",
+            "",
+            "## SQL 代码块规范",
+            "当你需要生成 SQL 查询示例时：",
+            "1. 必须将 SQL 放在 markdown 代码块中，语言标记为 `sql`。",
+            "2. SQL 代码块的**第一行**必须是注释：`-- datasource_id: {id}`，其中 `{id}` 是 SQL 所针对的数据源 ID。",
+            "3. `datasource_id` 必须来自 `schema_metadata_query` 等元数据工具返回结果中的字段，不得凭空猜测或随意填写。",
+            "4. 如果你不确定 datasource_id，可以不写该注释。",
+            "5. 不要在回答中直接执行 SQL，仅展示 SQL 代码供用户参考。",
         ]
         if schema_context:
             parts.append("\n" + schema_context)
