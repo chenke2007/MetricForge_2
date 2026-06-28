@@ -6,6 +6,7 @@ import {
   GithubOutlined,
   SettingOutlined,
   RobotOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 
@@ -31,6 +32,11 @@ const menuItems = [
     key: '/ask',
     icon: <RobotOutlined />,
     label: 'AI 问数',
+  },
+  {
+    key: '/sql-workbench',
+    icon: <CodeOutlined />,
+    label: 'SQL 工作台',
   },
 ]
 
