@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import { Spin, Empty, Button, message } from 'antd'
+import { useSearchParams } from 'react-router-dom'
 import { useSqlDatasources, useExecuteSql } from '../api/sqlWorkbench'
 import { useSqlWorkbenchStore } from '../stores/sqlWorkbenchStore'
 import SchemaPanel from '../components/SchemaPanel'
@@ -12,6 +13,7 @@ import DraftFormModal from '../components/DraftFormModal'
 const SqlWorkbenchPage: React.FC = () => {
   const { data: datasources, isLoading: dsLoading } = useSqlDatasources()
   const executeMutation = useExecuteSql()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const datasourceId = useSqlWorkbenchStore((s) => s.datasourceId)
   const sql = useSqlWorkbenchStore((s) => s.sql)
@@ -19,8 +21,49 @@ const SqlWorkbenchPage: React.FC = () => {
   const setResult = useSqlWorkbenchStore((s) => s.setResult)
   const showResult = useSqlWorkbenchStore((s) => s.showResult)
   const setSql = useSqlWorkbenchStore((s) => s.setSql)
+  const setDatasource = useSqlWorkbenchStore((s) => s.setDatasource)
 
   const [draftModalOpen, setDraftModalOpen] = React.useState(false)
+  const pendingDsIdRef = React.useRef<number | null>(null)
+
+  // 从 URL 参数读取 sql 和 datasource_id，写入 store 后清除参数
+  useEffect(() => {
+    const sqlParam = searchParams.get('sql')
+    const dsParam = searchParams.get('datasource_id')
+
+    if (!sqlParam) return
+
+    // useSearchParams 返回的值已由 React Router 解码，不要重复 decodeURIComponent
+    setSql(sqlParam)
+
+    if (dsParam) {
+      const dsId = parseInt(dsParam, 10)
+      if (!isNaN(dsId)) {
+        // 如果数据源列表已加载，直接匹配名称；否则记录 pending id，等加载完成后再匹配
+        if (datasources) {
+          const matched = datasources.find((ds: any) => ds.id === dsId)
+          setDatasource(dsId, matched ? matched.name : null)
+        } else {
+          pendingDsIdRef.current = dsId
+          setDatasource(dsId, null)
+        }
+      }
+    }
+
+    // 清除 URL 参数，防止刷新后重复处理
+    setSearchParams({}, { replace: true })
+  }, []) // 仅在挂载时执行一次
+
+  // 数据源列表异步加载完成后，补齐 datasource name
+  useEffect(() => {
+    if (!datasources || pendingDsIdRef.current === null) return
+
+    const matched = datasources.find((ds: any) => ds.id === pendingDsIdRef.current)
+    if (matched) {
+      setDatasource(matched.id, matched.name)
+    }
+    pendingDsIdRef.current = null
+  }, [datasources, setDatasource])
 
   const handleExecute = useCallback(async () => {
     if (!datasourceId || !sql.trim()) return
