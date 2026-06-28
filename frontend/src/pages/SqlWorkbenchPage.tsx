@@ -24,6 +24,7 @@ const SqlWorkbenchPage: React.FC = () => {
   const setDatasource = useSqlWorkbenchStore((s) => s.setDatasource)
 
   const [draftModalOpen, setDraftModalOpen] = React.useState(false)
+  const pendingDsIdRef = React.useRef<number | null>(null)
 
   // 从 URL 参数读取 sql 和 datasource_id，写入 store 后清除参数
   useEffect(() => {
@@ -37,18 +38,32 @@ const SqlWorkbenchPage: React.FC = () => {
 
     if (dsParam) {
       const dsId = parseInt(dsParam, 10)
-      // 如果数据源列表已加载，直接匹配名称
-      if (datasources) {
-        const matched = datasources.find((ds: any) => ds.id === dsId)
-        setDatasource(dsId, matched ? matched.name : null)
-      } else {
-        setDatasource(dsId, null)
+      if (!isNaN(dsId)) {
+        // 如果数据源列表已加载，直接匹配名称；否则记录 pending id，等加载完成后再匹配
+        if (datasources) {
+          const matched = datasources.find((ds: any) => ds.id === dsId)
+          setDatasource(dsId, matched ? matched.name : null)
+        } else {
+          pendingDsIdRef.current = dsId
+          setDatasource(dsId, null)
+        }
       }
     }
 
     // 清除 URL 参数，防止刷新后重复处理
     setSearchParams({}, { replace: true })
   }, []) // 仅在挂载时执行一次
+
+  // 数据源列表异步加载完成后，补齐 datasource name
+  useEffect(() => {
+    if (!datasources || pendingDsIdRef.current === null) return
+
+    const matched = datasources.find((ds: any) => ds.id === pendingDsIdRef.current)
+    if (matched) {
+      setDatasource(matched.id, matched.name)
+    }
+    pendingDsIdRef.current = null
+  }, [datasources, setDatasource])
 
   const handleExecute = useCallback(async () => {
     if (!datasourceId || !sql.trim()) return
