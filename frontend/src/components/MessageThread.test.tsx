@@ -20,7 +20,6 @@ const createAssistantMessage = (content: string): AskMessage => ({
   status: 'completed',
   session_id: 1,
   created_at: '2026-06-28T00:00:00Z',
-  updated_at: '2026-06-28T00:00:00Z',
   tokens_prompt: null,
   tokens_completion: null,
   error_message: null,
