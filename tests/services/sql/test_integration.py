@@ -114,3 +114,31 @@ class TestFullFlow:
             "sql": "DROP TABLE T_TEST",
         })
         assert resp.status_code == 422
+
+    def test_dangerous_sql_does_not_create_history(self, client, db_session):
+        # 1. Create datasource
+        ds = DatasourceConfig(
+            name="danger-test", ds_type="oracle", host="127.0.0.1",
+            port=1521, username="ro", dialect="oracle", is_active=True,
+        )
+        db_session.add(ds)
+        db_session.flush()
+        ds_id = ds.id
+
+        # 2. Record history count before dangerous SQL
+        resp = client.get("/api/sql/history")
+        assert resp.status_code == 200
+        history_before = len(resp.json())
+
+        # 3. Execute dangerous SQL → 422
+        resp = client.post("/api/sql/execute", json={
+            "datasource_id": ds_id,
+            "sql": "DROP TABLE T_TEST",
+        })
+        assert resp.status_code == 422
+
+        # 4. Verify no new history entry
+        resp = client.get("/api/sql/history")
+        assert resp.status_code == 200
+        history_after = len(resp.json())
+        assert history_after == history_before

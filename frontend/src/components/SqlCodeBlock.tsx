@@ -18,7 +18,7 @@ const SqlCodeBlock: React.FC<SqlCodeBlockProps> = ({ code, language }) => {
 
   // 解析 datasource_id 首行注释
   const { datasourceId, cleanCode } = useMemo(() => {
-    const match = code.match(/^--\s*datasource_id:\s*(\d+)\s*\n?/)
+    const match = code.match(/^\s*--\s*datasource_id:\s*(\d+)\s*\n?/)
     if (match) {
       return {
         datasourceId: parseInt(match[1], 10),
