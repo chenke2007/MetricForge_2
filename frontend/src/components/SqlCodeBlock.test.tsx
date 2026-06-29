@@ -14,22 +14,30 @@ describe('SqlCodeBlock', () => {
   })
 
   it('extracts datasource_id from code first line', () => {
-    const code = `-- datasource_id: 3\nSELECT * FROM DW_CONTRACT`
+    const code = `-- datasource_id: 2\nSELECT * FROM DW_CONTRACT`
     render(<SqlCodeBlock code={code} />)
     expect(screen.getByTestId('open-in-workbench-btn')).toBeInTheDocument()
   })
 
-  it('navigates to workbench with correct params', () => {
-    const code = `-- datasource_id: 3\nSELECT * FROM DW_CONTRACT`
+  it('extracts datasource_id with leading whitespace', () => {
+    const code = `  -- datasource_id: 2\nSELECT * FROM DW_CONTRACT`
     render(<SqlCodeBlock code={code} />)
     fireEvent.click(screen.getByTestId('open-in-workbench-btn'))
     const url = mockNavigate.mock.calls[0][0]
-    expect(url).toContain('datasource_id=3')
+    expect(url).toContain('datasource_id=2')
+  })
+
+  it('navigates to workbench with correct params', () => {
+    const code = `-- datasource_id: 2\nSELECT * FROM DW_CONTRACT`
+    render(<SqlCodeBlock code={code} />)
+    fireEvent.click(screen.getByTestId('open-in-workbench-btn'))
+    const url = mockNavigate.mock.calls[0][0]
+    expect(url).toContain('datasource_id=2')
     expect(url).toContain('sql=SELECT+*+FROM+DW_CONTRACT')
   })
 
   it('removes datasource_id line before passing to URL', () => {
-    const code = `-- datasource_id: 3\nSELECT * FROM DW_CONTRACT`
+    const code = `-- datasource_id: 2\nSELECT * FROM DW_CONTRACT`
     render(<SqlCodeBlock code={code} />)
     fireEvent.click(screen.getByTestId('open-in-workbench-btn'))
     const callUrl = mockNavigate.mock.calls[0][0]
@@ -52,14 +60,14 @@ describe('SqlCodeBlock', () => {
 
   it('shows warning modal when URL exceeds 1800 chars', () => {
     const longSql = 'SELECT ' + 'a'.repeat(1755) + ' FROM t'
-    const code = `-- datasource_id: 1\n${longSql}`
+    const code = `-- datasource_id: 2\n${longSql}`
     render(<SqlCodeBlock code={code} />)
     fireEvent.click(screen.getByTestId('open-in-workbench-btn'))
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 
   it('encodes special characters in SQL', () => {
-    const code = `-- datasource_id: 1\nSELECT '中文' FROM t`
+    const code = `-- datasource_id: 2\nSELECT '中文' FROM t`
     render(<SqlCodeBlock code={code} />)
     fireEvent.click(screen.getByTestId('open-in-workbench-btn'))
     const url = mockNavigate.mock.calls[0][0]
