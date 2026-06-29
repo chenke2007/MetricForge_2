@@ -1,6 +1,7 @@
 import React from 'react'
 import { Form, Input, Button, Space, Descriptions, message } from 'antd'
-import type { FieldContext, FieldSemanticData, SaveSemanticResponse, ApiErrorLike } from '../api/governance'
+import { useSaveSemantic } from '../hooks/useSaveSemantic'
+import type { FieldContext, FieldSemanticData, SaveSemanticResponse } from '../api/governance'
 
 interface SemanticEditFormProps {
   fieldContext: FieldContext
@@ -27,15 +28,12 @@ const SemanticEditForm: React.FC<SemanticEditFormProps> = ({
   onCancel,
 }) => {
   const [form] = Form.useForm<FormValues>()
-  const [saving, setSaving] = React.useState(false)
+  const { mutateAsync: saveSemantic, isPending: saving } = useSaveSemantic()
 
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
-      setSaving(true)
-      // Dynamic import to avoid circular dependency
-      const { saveFieldSemantic } = await import('../api/governance')
-      const response = await saveFieldSemantic({
+      const response = await saveSemantic({
         column_id: fieldContext.id,
         business_alias: values.business_alias,
         meaning: values.meaning,
@@ -47,12 +45,14 @@ const SemanticEditForm: React.FC<SemanticEditFormProps> = ({
       onSaved(response)
     } catch (err) {
       // Form validation errors are displayed inline by Ant Design
-      const apiErr = err as ApiErrorLike
+      if (err && typeof err === 'object' && 'errorFields' in err) {
+        return
+      }
+      // API errors
+      const apiErr = err as { status?: number; message?: string }
       if (apiErr?.status || apiErr?.message) {
         message.error('保存失败，请重试')
       }
-    } finally {
-      setSaving(false)
     }
   }
 

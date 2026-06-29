@@ -182,6 +182,29 @@ describe('GovernanceDetailDrawer', () => {
       />
     )
     expect(screen.queryByRole('button', { name: /编\s*辑\s*字\s*段\s*语\s*义/ })).toBeNull()
+    expect(screen.getByText('关联字段可能已被删除')).toBeTruthy()
+  })
+
+  it('shows field_context null warning even when related_object_type is not column', () => {
+    const noFieldDetail: GovernanceTicketDetail = {
+      ...mockDetail,
+      related_object_type: 'table',
+      field_context: null,
+    }
+    vi.mocked(useGovernanceTicket).mockReturnValue(makeMockQueryResult({
+      data: noFieldDetail,
+      isSuccess: true,
+      status: 'success',
+    }))
+
+    render(
+      <GovernanceDetailDrawer
+        open={true}
+        ticketId={1}
+        onClose={onClose}
+      />
+    )
+    expect(screen.getByText('关联字段可能已被删除')).toBeTruthy()
   })
 
   it('does not render when closed', () => {

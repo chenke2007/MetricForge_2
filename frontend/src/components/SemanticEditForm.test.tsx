@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import SemanticEditForm from './SemanticEditForm'
 import type { FieldContext, FieldSemanticData } from '../api/governance'
 
+vi.mock('../hooks/useSaveSemantic', () => ({
+  useSaveSemantic: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+}))
+
 const mockFieldContext: FieldContext = {
   id: 42,
   schema_name: 'DW',

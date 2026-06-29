@@ -116,7 +116,7 @@ const GovernanceDetailDrawer: React.FC<GovernanceDetailDrawerProps> = ({ open, t
         )}
 
         {/* Field context null warning */}
-        {data.related_object_type === 'column' && !data.field_context && (
+        {!data.field_context && (
           <Typography.Text type="warning" style={{ display: 'block', marginBottom: 16 }}>
             关联字段可能已被删除
           </Typography.Text>
