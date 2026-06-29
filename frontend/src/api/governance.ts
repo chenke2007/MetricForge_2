@@ -93,6 +93,11 @@ export interface SaveSemanticResponse {
   closed_tickets: number
 }
 
+export interface ApiErrorLike {
+  status?: number
+  message?: string
+}
+
 /* ─── Helpers ─── */
 
 /**
