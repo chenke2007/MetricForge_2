@@ -7,6 +7,7 @@ import {
   SettingOutlined,
   RobotOutlined,
   CodeOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 
@@ -37,6 +38,11 @@ const menuItems = [
     key: '/sql-workbench',
     icon: <CodeOutlined />,
     label: 'SQL 工作台',
+  },
+  {
+    key: '/governance',
+    icon: <SafetyOutlined />,
+    label: '治理待办',
   },
 ]
 
