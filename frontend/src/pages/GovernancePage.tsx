@@ -27,8 +27,12 @@ const GovernancePage: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = React.useState(false)
 
   const updateFilters = (newFilters: Partial<GovernanceFilters>) => {
-    const params = new URLSearchParams()
+    const params = new URLSearchParams(searchParams)
     const merged = { ...filters, ...newFilters, page: newFilters.page ?? 1 }
+    // Remove governance filter keys that are being cleared
+    ;(['status', 'ticket_type', 'source', 'page', 'per_page'] as const).forEach((key) => {
+      params.delete(key)
+    })
     Object.entries(merged).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         params.set(key, String(value))

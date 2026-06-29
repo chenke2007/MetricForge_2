@@ -1,7 +1,7 @@
 import React from 'react'
 import { Form, Input, Button, Space, Descriptions, message } from 'antd'
 import { useSaveSemantic } from '../hooks/useSaveSemantic'
-import type { FieldContext, FieldSemanticData, SaveSemanticResponse } from '../api/governance'
+import type { FieldContext, FieldSemanticData, SaveSemanticResponse, ApiErrorLike } from '../api/governance'
 
 interface SemanticEditFormProps {
   fieldContext: FieldContext
@@ -49,7 +49,7 @@ const SemanticEditForm: React.FC<SemanticEditFormProps> = ({
         return
       }
       // API errors
-      const apiErr = err as { status?: number; message?: string }
+      const apiErr = err as ApiErrorLike
       if (apiErr?.status || apiErr?.message) {
         message.error('保存失败，请重试')
       }

@@ -207,6 +207,30 @@ describe('GovernanceDetailDrawer', () => {
     expect(screen.getByText('关联字段可能已被删除')).toBeTruthy()
   })
 
+  it('auto-closes after 3s when 404 error occurs', () => {
+    vi.useFakeTimers()
+    vi.mocked(useGovernanceTicket).mockReturnValue(makeMockQueryResult({
+      isError: true,
+      isLoadingError: true,
+      status: 'error',
+      error: { status: 404, message: '治理待办不存在' } as unknown as Error,
+    }))
+
+    render(
+      <GovernanceDetailDrawer
+        open={true}
+        ticketId={999}
+        onClose={onClose}
+      />
+    )
+    expect(screen.getByText('待办不存在')).toBeTruthy()
+
+    vi.advanceTimersByTime(3000)
+    expect(onClose).toHaveBeenCalled()
+
+    vi.useRealTimers()
+  })
+
   it('does not render when closed', () => {
     vi.mocked(useGovernanceTicket).mockReturnValue(makeMockQueryResult())
 

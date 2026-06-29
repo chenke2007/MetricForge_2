@@ -143,9 +143,9 @@ describe('GovernancePage', () => {
     vi.mocked(useGovernanceTickets).mockReturnValue(mockResult as unknown as ReturnType<typeof useGovernanceTickets>)
 
     render(<GovernancePage />)
-    // Table shows Spin when loading
-    const table = document.querySelector('.ant-spin')
-    expect(table).toBeTruthy()
+    // Table shows Spin when loading; use accessible role if available
+    const progressbar = document.querySelector('.ant-spin') || screen.queryByRole('progressbar')
+    expect(progressbar).toBeTruthy()
   })
 
   it('shows error state when tickets fail to load', () => {

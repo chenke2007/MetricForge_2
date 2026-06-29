@@ -107,7 +107,7 @@ export interface ApiErrorLike {
 function apiPutQuery<T>(path: string, params: Record<string, string | number | null | undefined>): Promise<T> {
   const searchParams = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== null && value !== undefined && value !== '') {
+    if (value !== null && value !== undefined) {
       searchParams.set(key, String(value))
     }
   })

@@ -101,9 +101,9 @@ describe('GovernanceList', () => {
         onSelect={vi.fn()}
       />
     )
-    // Click page 2 button
-    const pageButtons = screen.getAllByTitle('2')
-    fireEvent.click(pageButtons[0])
+    // Click page 2 button (AntD pagination items are <li> with <a>)
+    const page2 = screen.getByTitle('2')
+    fireEvent.click(page2)
     expect(onPageChange).toHaveBeenCalledWith(2, 20)
   })
 })
