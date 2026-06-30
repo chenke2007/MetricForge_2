@@ -221,4 +221,46 @@ describe('ResultTable', () => {
     const allCells = container.querySelectorAll('.ant-table-cell')
     expect(allCells.length).toBeGreaterThan(0)
   })
+
+  it('does not overwrite internal rowKey when business column is named _rowKey', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['_rowKey', 'name'],
+      rows: [
+        [100, 'Alice'],
+        [100, 'Bob'],
+      ],
+      row_count: 2,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    expect(container.querySelector('.ant-table')).toBeInTheDocument()
+    expect(consoleSpy).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
+  })
+
+  it('does not overwrite internal rowKey when business column is named __mf_rowKey__', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['__mf_rowKey__', 'name'],
+      rows: [
+        [999, 'Alice'],
+        [999, 'Bob'],
+      ],
+      row_count: 2,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    expect(container.querySelector('.ant-table')).toBeInTheDocument()
+    expect(consoleSpy).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
+  })
 })
