@@ -183,12 +183,20 @@ describe('GovernancePage', () => {
     })
   })
 
-  it('reads default status=open from URL search params', () => {
-    mockSearchParams.set('status', 'open')
+  it('resets page to 1 when a filter changes', () => {
+    // Simulate being on page 2
+    mockSearchParams.set('page', '2')
     render(<GovernancePage />)
 
-    expect(useGovernanceTickets).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'open', page: 1 })
-    )
+    // Open status select and pick a filter value
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '状态' }))
+    const options = screen.getAllByText('待处理')
+    fireEvent.click(options[options.length - 1])
+
+    // setSearchParams should have been called with page=1
+    const lastCall = mockSetSearchParams.mock.calls[mockSetSearchParams.mock.calls.length - 1]
+    const params = lastCall[0] as URLSearchParams
+    expect(params.get('page')).toBe('1')
+    expect(params.get('status')).toBe('open')
   })
 })

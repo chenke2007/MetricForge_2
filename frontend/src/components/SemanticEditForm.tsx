@@ -44,14 +44,11 @@ const SemanticEditForm: React.FC<SemanticEditFormProps> = ({
       })
       onSaved(response)
     } catch (err) {
-      // Form validation errors are displayed inline by Ant Design
+      // Ant Design validation errors have errorFields and are not Error instances
       if (err && typeof err === 'object' && 'errorFields' in err && !(err instanceof Error)) {
         return
       }
-      // API errors
-      if (err instanceof Error) {
-        message.error('保存失败，请重试')
-      }
+      message.error('保存失败，请重试')
     }
   }
 

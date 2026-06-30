@@ -46,7 +46,7 @@ const GovernancePage: React.FC = () => {
   }
 
   const handleFilterChange = (values: GovernanceFilters) => {
-    updateFilters(values)
+    updateFilters({ ...values, page: 1 })
   }
 
   const handleReset = () => {
