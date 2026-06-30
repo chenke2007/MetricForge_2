@@ -1,7 +1,7 @@
 import React from 'react'
 import { Form, Input, Button, Space, Descriptions, message } from 'antd'
 import { useSaveSemantic } from '../hooks/useSaveSemantic'
-import type { FieldContext, FieldSemanticData, SaveSemanticResponse, ApiErrorLike } from '../api/governance'
+import type { FieldContext, FieldSemanticData, SaveSemanticResponse } from '../api/governance'
 
 interface SemanticEditFormProps {
   fieldContext: FieldContext
@@ -45,12 +45,11 @@ const SemanticEditForm: React.FC<SemanticEditFormProps> = ({
       onSaved(response)
     } catch (err) {
       // Form validation errors are displayed inline by Ant Design
-      if (err && typeof err === 'object' && 'errorFields' in err) {
+      if (err && typeof err === 'object' && 'errorFields' in err && !(err instanceof Error)) {
         return
       }
       // API errors
-      const apiErr = err as ApiErrorLike
-      if (apiErr?.status || apiErr?.message) {
+      if (err instanceof Error) {
         message.error('保存失败，请重试')
       }
     }

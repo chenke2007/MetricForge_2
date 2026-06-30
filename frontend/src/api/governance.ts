@@ -112,7 +112,7 @@ function apiPutQuery<T>(path: string, params: Record<string, string | number | n
     }
   })
   const qs = searchParams.toString()
-  return apiFetch<T>(`${path}${qs ? `?${qs}` : ''}`, { method: 'PUT' })
+  return apiFetch<T>(`${path}${qs ? `?${qs}` : ''}`, { method: 'PUT', headers: { 'Content-Type': '' } })
 }
 
 /* ─── Fetchers ─── */

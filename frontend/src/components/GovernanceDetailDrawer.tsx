@@ -42,13 +42,18 @@ const GovernanceDetailDrawer: React.FC<GovernanceDetailDrawerProps> = ({ open, t
     setAssigneeInput('')
   }, [ticketId])
 
+  const onCloseRef = React.useRef(onClose)
+  React.useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
   // 404 auto-close: close drawer after 3s when ticket not found
   React.useEffect(() => {
     if (isError && (error as ApiErrorLike)?.status === 404) {
-      const timer = setTimeout(() => onClose(), 3000)
+      const timer = setTimeout(() => onCloseRef.current(), 3000)
       return () => clearTimeout(timer)
     }
-  }, [isError, error, onClose])
+  }, [isError, error])
 
   const canEditSemantic = data?.ticket_type === 'missing_semantic'
     && (data?.status === 'open' || data?.status === 'in_progress')

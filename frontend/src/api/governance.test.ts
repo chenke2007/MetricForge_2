@@ -49,7 +49,7 @@ describe('governance API client', () => {
 
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/field-semantics/columns/42?business_alias=%E5%90%88%E5%90%8C%E7%BC%96%E5%8F%B7&meaning=%E5%90%88%E5%90%8C%E5%94%AF%E4%B8%80%E7%BC%96%E7%A0%81',
-      { method: 'PUT' }
+      { method: 'PUT', headers: { 'Content-Type': '' } }
     )
   })
 
@@ -74,7 +74,7 @@ describe('governance API client', () => {
 
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/governance/1/status?status=closed&resolution=%E5%B7%B2%E5%AE%8C%E6%88%90',
-      { method: 'PUT' }
+      { method: 'PUT', headers: { 'Content-Type': '' } }
     )
   })
 
@@ -85,7 +85,7 @@ describe('governance API client', () => {
 
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/governance/1/status?status=closed',
-      { method: 'PUT' }
+      { method: 'PUT', headers: { 'Content-Type': '' } }
     )
   })
 
@@ -96,7 +96,7 @@ describe('governance API client', () => {
 
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/governance/1/assign?assignee=%E5%BC%A0%E4%B8%89',
-      { method: 'PUT' }
+      { method: 'PUT', headers: { 'Content-Type': '' } }
     )
   })
 })

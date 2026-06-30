@@ -35,6 +35,10 @@ const GovernancePage: React.FC = () => {
     })
     Object.entries(merged).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
+        // Do not include per_page when it equals the default
+        if (key === 'per_page' && value === PAGE_SIZE) {
+          return
+        }
         params.set(key, String(value))
       }
     })
@@ -54,10 +58,20 @@ const GovernancePage: React.FC = () => {
     setDrawerOpen(true)
   }
 
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  React.useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleCloseDrawer = () => {
     setDrawerOpen(false)
     // Delay clearing ticketId to avoid flicker during drawer close animation
-    setTimeout(() => setSelectedTicketId(null), 300)
+    timeoutRef.current = setTimeout(() => setSelectedTicketId(null), 300)
   }
 
   const handlePageChange = (page: number) => {
