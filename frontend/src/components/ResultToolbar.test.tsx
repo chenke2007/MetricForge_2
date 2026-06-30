@@ -3,14 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 import ResultToolbar from './ResultToolbar'
 
-// Mock CSV utility functions with named spies
-const mockDownloadCsv = vi.fn()
-const mockCopyCsv = vi.fn<(csv: string) => Promise<boolean>>()
+// Mock CSV utility functions with named spies (hoisted so vi.mock can reference them)
+const { mockDownloadCsv, mockCopyCsv } = vi.hoisted(() => ({
+  mockDownloadCsv: vi.fn(),
+  mockCopyCsv: vi.fn<(csv: string) => Promise<boolean>>(),
+}))
 
 vi.mock('../utils/csv', () => ({
   rowsToCsv: vi.fn(() => 'mock,csv\n1,2'),
-  downloadCsv: (...args: any[]) => mockDownloadCsv(...args),
-  copyCsv: (...args: any[]) => mockCopyCsv(...args),
+  downloadCsv: mockDownloadCsv,
+  copyCsv: mockCopyCsv,
 }))
 
 // Mock antd message
