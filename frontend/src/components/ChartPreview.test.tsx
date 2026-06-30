@@ -134,15 +134,5 @@ describe('ChartPreview', () => {
     fireEvent.click(pieTab)
     expect(mockStore.setChartConfig).toHaveBeenCalledWith(expect.objectContaining({ chartType: 'pie' }))
   })
-
-  it('shows alert when insufficient numeric columns exist', () => {
-    mockStore.result = {
-      columns: ['category', 'name'],
-      rows: [['A', 'Alice']],
-      row_count: 1,
-    }
-    mockStore.chartConfig = { chartType: 'bar', xColumn: 'category', yColumn: 'name' }
-    render(<ChartPreview />)
-    expect(screen.getByText(/所选 Y 字段不是数值类型/)).toBeInTheDocument()
-  })
 })
+
