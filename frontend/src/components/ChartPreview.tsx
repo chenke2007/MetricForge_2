@@ -7,8 +7,8 @@ import { aggregateChartData } from '../utils/chartData'
 
 const ChartPreview: React.FC = () => {
   const result = useSqlWorkbenchStore((s) => s.result)
-  const chartConfig = useSqlWorkbenchStore((s: any) => s.chartConfig)
-  const setChartConfig = useSqlWorkbenchStore((s: any) => s.setChartConfig)
+  const chartConfig = useSqlWorkbenchStore((s) => s.chartConfig)
+  const setChartConfig = useSqlWorkbenchStore((s) => s.setChartConfig)
 
   if (!result || result.columns.length === 0 || result.row_count === 0) {
     return <Empty description="查询结果为空，无法生成图表" />
@@ -20,8 +20,8 @@ const ChartPreview: React.FC = () => {
   if (hasSelection) {
     const aggregated = aggregateChartData({
       chartType: chartConfig.chartType,
-      xColumn: chartConfig.xColumn,
-      yColumn: chartConfig.yColumn,
+      xColumn: chartConfig.xColumn!,
+      yColumn: chartConfig.yColumn!,
       columns: result.columns,
       rows: result.rows,
     })
