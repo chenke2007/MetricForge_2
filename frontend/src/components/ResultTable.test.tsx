@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockStore = vi.hoisted(() => ({
   result: null as any,
@@ -15,6 +15,10 @@ describe('ResultTable', () => {
     vi.clearAllMocks()
     mockStore.result = null
     mockStore.resultVisible = false
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('renders nothing when resultVisible is false', async () => {
@@ -240,7 +244,6 @@ describe('ResultTable', () => {
     const { container } = render(<ResultTable />)
     expect(container.querySelector('.ant-table')).toBeInTheDocument()
     expect(consoleSpy).not.toHaveBeenCalled()
-    consoleSpy.mockRestore()
   })
 
   it('does not overwrite internal rowKey when business column is named __mf_rowKey__', async () => {
@@ -261,6 +264,5 @@ describe('ResultTable', () => {
     const { container } = render(<ResultTable />)
     expect(container.querySelector('.ant-table')).toBeInTheDocument()
     expect(consoleSpy).not.toHaveBeenCalled()
-    consoleSpy.mockRestore()
   })
 })

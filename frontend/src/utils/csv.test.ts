@@ -53,6 +53,14 @@ describe('escapeCsvField', () => {
   it('does not double-prefix already tab-prefixed values', () => {
     expect(escapeCsvField('\t=1')).toBe('\t=1')
   })
+
+  it('does not double-prefix newline-prefixed values', () => {
+    expect(escapeCsvField('\n=1')).toBe('"\n=1"')
+  })
+
+  it('does not double-prefix carriage-return-prefixed values', () => {
+    expect(escapeCsvField('\r=1')).toBe('"\r=1"')
+  })
 })
 
 describe('rowsToCsv', () => {
