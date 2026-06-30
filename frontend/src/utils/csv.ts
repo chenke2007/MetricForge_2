@@ -17,7 +17,7 @@ export function rowsToCsv(columns: string[], rows: any[][]): string {
 
   // Rows — NULL → empty cell
   for (const row of rows) {
-    const fields = row.map((val) => escapeCsvField(val === null ? '' : String(val)))
+    const fields = row.map((val) => escapeCsvField(val == null ? '' : String(val)))
     lines.push(fields.join(separator))
   }
 

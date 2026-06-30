@@ -41,7 +41,7 @@ function isNumericColumn(sampleValues: any[]): boolean {
   const first = sampleValues.find((v) => v !== null && v !== undefined && v !== '')
   if (first === undefined) return false
   const str = String(first)
-  return str !== '' && !isNaN(Number(str))
+  return !isNaN(Number(str))
 }
 
 const ResultTable: React.FC = () => {
@@ -67,7 +67,7 @@ const ResultTable: React.FC = () => {
   }
 
   const dataSource = result.rows.map((row, idx) => {
-    const record: Record<string, any> = { _key: idx }
+    const record: Record<string, any> = { _rowKey: idx }
     result.columns.forEach((col, ci) => {
       record[col] = row[ci]
     })
@@ -97,7 +97,7 @@ const ResultTable: React.FC = () => {
         return String(va).localeCompare(String(vb))
       },
       showSorterTooltip: false,
-      render: (val: any) => (val === null
+      render: (val: any) => (val == null
         ? <span style={{ color: '#ccc' }}>NULL</span>
         : String(val)),
     }
@@ -108,7 +108,7 @@ const ResultTable: React.FC = () => {
       <Table
         dataSource={dataSource}
         columns={columns}
-        rowKey="_key"
+        rowKey="_rowKey"
         size="small"
         pagination={false}
         scroll={{ x: 'max-content', y: 400 }}

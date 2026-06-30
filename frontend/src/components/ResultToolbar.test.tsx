@@ -131,7 +131,7 @@ describe('ResultToolbar', () => {
     expect(mockDownloadCsv).toHaveBeenCalled()
   })
 
-  it('calls copyCsv on copy button click', async () => {
+  it('calls copyCsv on copy button click', () => {
     mockCopyCsv.mockResolvedValue(true)
     mockStore.result = {
       columns: ['a', 'b'],

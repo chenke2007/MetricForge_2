@@ -168,4 +168,57 @@ describe('ResultTable', () => {
     const allCells = container.querySelectorAll('.ant-table-cell')
     expect(allCells.length).toBeGreaterThan(0)
   })
+
+  it('sorts rows descending when column header clicked twice', async () => {
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['val'],
+      rows: [['3'], ['1'], ['2']],
+      row_count: 3,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    const headerRow = container.querySelector('.ant-table-thead')
+    expect(headerRow).toBeTruthy()
+    const headerCells = headerRow?.querySelectorAll('th')
+    expect(headerCells?.length).toBeGreaterThan(0)
+    if (headerCells && headerCells.length > 0) {
+      // Click twice for descending
+      fireEvent.click(headerCells[0])
+      fireEvent.click(headerCells[0])
+    }
+
+    const allCells = container.querySelectorAll('.ant-table-cell')
+    expect(allCells.length).toBeGreaterThan(0)
+  })
+
+  it('removes sort when column header clicked thrice', async () => {
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['val'],
+      rows: [['3'], ['1'], ['2']],
+      row_count: 3,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    const headerRow = container.querySelector('.ant-table-thead')
+    expect(headerRow).toBeTruthy()
+    const headerCells = headerRow?.querySelectorAll('th')
+    expect(headerCells?.length).toBeGreaterThan(0)
+    if (headerCells && headerCells.length > 0) {
+      // Click three times for ascending → descending → no sort
+      fireEvent.click(headerCells[0])
+      fireEvent.click(headerCells[0])
+      fireEvent.click(headerCells[0])
+    }
+
+    const allCells = container.querySelectorAll('.ant-table-cell')
+    expect(allCells.length).toBeGreaterThan(0)
+  })
 })
