@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockStore = vi.hoisted(() => ({
   result: null as any,
@@ -15,6 +15,10 @@ describe('ResultTable', () => {
     vi.clearAllMocks()
     mockStore.result = null
     mockStore.resultVisible = false
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('renders nothing when resultVisible is false', async () => {
@@ -220,5 +224,45 @@ describe('ResultTable', () => {
 
     const allCells = container.querySelectorAll('.ant-table-cell')
     expect(allCells.length).toBeGreaterThan(0)
+  })
+
+  it('does not overwrite internal rowKey when business column is named _rowKey', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['_rowKey', 'name'],
+      rows: [
+        [100, 'Alice'],
+        [100, 'Bob'],
+      ],
+      row_count: 2,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    expect(container.querySelector('.ant-table')).toBeInTheDocument()
+    expect(consoleSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite internal rowKey when business column is named __mf_rowKey__', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockStore.resultVisible = true
+    mockStore.result = {
+      columns: ['__mf_rowKey__', 'name'],
+      rows: [
+        [999, 'Alice'],
+        [999, 'Bob'],
+      ],
+      row_count: 2,
+      truncated: false,
+      elapsed_ms: 10,
+      error: null,
+    }
+    const ResultTable = (await import('./ResultTable')).default
+    const { container } = render(<ResultTable />)
+    expect(container.querySelector('.ant-table')).toBeInTheDocument()
+    expect(consoleSpy).not.toHaveBeenCalled()
   })
 })

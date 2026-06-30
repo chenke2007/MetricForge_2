@@ -6,6 +6,7 @@ import { useSqlWorkbenchStore } from '../stores/sqlWorkbenchStore'
 const COLUMN_MIN_WIDTH = 80
 const COLUMN_MAX_WIDTH = 400
 const SAMPLE_ROW_LIMIT = 100
+const INTERNAL_ROW_KEY = '__mf_rowKey__'
 
 /** Estimate pixel width of a text string (Chinese chars ~16px, ASCII ~8px) */
 function calculateTextWidth(text: string): number {
@@ -67,10 +68,11 @@ const ResultTable: React.FC = () => {
   }
 
   const dataSource = result.rows.map((row, idx) => {
-    const record: Record<string, any> = { _rowKey: idx }
+    const record: Record<string, any> = {}
     result.columns.forEach((col, ci) => {
       record[col] = row[ci]
     })
+    record[INTERNAL_ROW_KEY] = idx
     return record
   })
 
@@ -108,7 +110,7 @@ const ResultTable: React.FC = () => {
       <Table
         dataSource={dataSource}
         columns={columns}
-        rowKey="_rowKey"
+        rowKey={INTERNAL_ROW_KEY}
         size="small"
         pagination={false}
         scroll={{ x: 'max-content', y: 400 }}

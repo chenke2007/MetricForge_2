@@ -2,10 +2,24 @@ const BOM = '﻿'
 
 export function escapeCsvField(value: string): string {
   if (value === '') return ''
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`
+
+  // CSV formula injection protection: prefix triggering characters with tab
+  // so spreadsheet applications treat the cell as text.
+  let safeValue = value
+  let prefixed = false
+  if (/^[\t\n\r]/.test(value)) {
+    // Already prefixed by tab/newline should not happen in normal data,
+    // but keep the value as-is to avoid double-prefixing.
+  } else if (/^[=+\-@]/.test(value)) {
+    safeValue = '\t' + value
+    prefixed = true
   }
-  return value
+
+  // Wrap in quotes if we added a prefix or if the value contains CSV-special chars.
+  if (prefixed || /[",\r\n]/.test(safeValue)) {
+    return `"${safeValue.replace(/"/g, '""')}"`
+  }
+  return safeValue
 }
 
 export function rowsToCsv(columns: string[], rows: any[][]): string {

@@ -29,6 +29,38 @@ describe('escapeCsvField', () => {
   it('does not wrap numeric string without special chars', () => {
     expect(escapeCsvField('123')).toBe('123')
   })
+
+  it('prefixes leading equals sign with tab and quotes', () => {
+    expect(escapeCsvField('=1+1')).toBe('"\t=1+1"')
+  })
+
+  it('prefixes leading plus sign with tab and quotes', () => {
+    expect(escapeCsvField('+123')).toBe('"\t+123"')
+  })
+
+  it('prefixes leading minus sign with tab and quotes', () => {
+    expect(escapeCsvField('-123')).toBe('"\t-123"')
+  })
+
+  it('prefixes leading at sign with tab and quotes', () => {
+    expect(escapeCsvField('@user')).toBe('"\t@user"')
+  })
+
+  it('does not modify safe plain text', () => {
+    expect(escapeCsvField('hello')).toBe('hello')
+  })
+
+  it('does not double-prefix already tab-prefixed values', () => {
+    expect(escapeCsvField('\t=1')).toBe('\t=1')
+  })
+
+  it('does not double-prefix newline-prefixed values', () => {
+    expect(escapeCsvField('\n=1')).toBe('"\n=1"')
+  })
+
+  it('does not double-prefix carriage-return-prefixed values', () => {
+    expect(escapeCsvField('\r=1')).toBe('"\r=1"')
+  })
 })
 
 describe('rowsToCsv', () => {
