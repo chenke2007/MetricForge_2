@@ -28,6 +28,8 @@ const mockStore = vi.hoisted(() => ({
   setExecuting: vi.fn(),
   setResult: vi.fn(),
   showResult: vi.fn(),
+  setChartConfig: vi.fn(),
+  setResultView: vi.fn(),
 }))
 
 vi.mock('../stores/sqlWorkbenchStore', () => ({
@@ -48,6 +50,15 @@ vi.mock('../components/SqlEditor', () => ({ default: () => <div /> }))
 vi.mock('../components/ResultPanel', () => ({ default: () => <div /> }))
 vi.mock('../components/BottomPanel', () => ({ default: () => <div /> }))
 vi.mock('../components/DraftFormModal', () => ({ default: () => <div /> }))
+
+// Mock ChartDraftList: expose onLoad callback so tests can simulate draft loading
+const mockChartDraftListOnLoad = vi.fn()
+vi.mock('../components/ChartDraftList', () => ({
+  default: ({ onLoad }: any) => {
+    mockChartDraftListOnLoad.mockImplementation(onLoad)
+    return <div data-testid="chart-draft-list-mock">ChartDraftList</div>
+  },
+}))
 
 // 透传型 mock Toolbar：暴露可点击的执行按钮
 vi.mock('../components/SqlEditorToolbar', () => ({
@@ -187,5 +198,45 @@ describe('SqlWorkbenchPage', () => {
         sql: 'SELECT 1',
       })
     })
+  })
+
+  it('shows chart drafts button on the page', () => {
+    render(<SqlWorkbenchPage />)
+    expect(screen.getByText('图表草稿')).toBeInTheDocument()
+  })
+
+  it('opens drawer when chart drafts button is clicked', () => {
+    render(<SqlWorkbenchPage />)
+    // Drawer should not be visible initially
+    expect(screen.queryByTestId('chart-draft-list-mock')).not.toBeInTheDocument()
+    // Click to open
+    fireEvent.click(screen.getByText('图表草稿'))
+    expect(screen.getByTestId('chart-draft-list-mock')).toBeInTheDocument()
+  })
+
+  it('loads chart draft data via onLoad callback', () => {
+    const mockDraft = {
+      id: 1,
+      title: 'Test Chart',
+      sqlText: 'SELECT * FROM test',
+      datasourceId: 2,
+      chartConfig: { chartType: 'bar' as const, xColumn: 'name' as const, yColumn: 'value' as const },
+      datasourceAvailable: true,
+      createdAt: '2026-06-30T10:00:00Z',
+      updatedAt: '2026-06-30T12:00:00Z',
+    }
+
+    // Datasources are already loaded (mockDatasources.data = [{ id: 2, name: 'dwhrpt' }]),
+    // so the callback will match and look up the datasource name
+    render(<SqlWorkbenchPage />)
+    fireEvent.click(screen.getByText('图表草稿'))
+
+    // Trigger onLoad via the mocked component
+    mockChartDraftListOnLoad(mockDraft)
+
+    expect(mockStore.setSql).toHaveBeenCalledWith('SELECT * FROM test')
+    expect(mockStore.setDatasource).toHaveBeenCalledWith(2, 'dwhrpt')
+    expect(mockStore.setChartConfig).toHaveBeenCalledWith(mockDraft.chartConfig)
+    expect(mockStore.setResultView).toHaveBeenCalledWith('chart')
   })
 })
