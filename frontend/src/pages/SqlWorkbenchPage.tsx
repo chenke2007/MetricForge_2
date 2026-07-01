@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect } from 'react'
-import { Spin, Empty, Button, message } from 'antd'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Spin, Empty, Button, message, Drawer } from 'antd'
 import { useSearchParams } from 'react-router-dom'
+import { FileTextOutlined } from '@ant-design/icons'
 import { useSqlDatasources, useExecuteSql } from '../api/sqlWorkbench'
 import { useSqlWorkbenchStore } from '../stores/sqlWorkbenchStore'
 import SchemaPanel from '../components/SchemaPanel'
@@ -9,6 +10,8 @@ import SqlEditorToolbar from '../components/SqlEditorToolbar'
 import ResultPanel from '../components/ResultPanel'
 import BottomPanel from '../components/BottomPanel'
 import DraftFormModal from '../components/DraftFormModal'
+import ChartDraftList from '../components/ChartDraftList'
+import type { ChartDraft } from '../api/chartDrafts'
 
 const SqlWorkbenchPage: React.FC = () => {
   const { data: datasources, isLoading: dsLoading } = useSqlDatasources()
@@ -22,8 +25,11 @@ const SqlWorkbenchPage: React.FC = () => {
   const showResult = useSqlWorkbenchStore((s) => s.showResult)
   const setSql = useSqlWorkbenchStore((s) => s.setSql)
   const setDatasource = useSqlWorkbenchStore((s) => s.setDatasource)
+  const setChartConfig = useSqlWorkbenchStore((s) => s.setChartConfig)
+  const setResultView = useSqlWorkbenchStore((s) => s.setResultView)
 
   const [draftModalOpen, setDraftModalOpen] = React.useState(false)
+  const [chartDraftDrawerOpen, setChartDraftDrawerOpen] = useState(false)
   const pendingDsIdRef = React.useRef<number | null>(null)
 
   // 从 URL 参数读取 sql 和 datasource_id，写入 store 后清除参数
@@ -95,6 +101,28 @@ const SqlWorkbenchPage: React.FC = () => {
     setSql('')
   }, [setSql])
 
+  const handleLoadChartDraft = useCallback((draft: ChartDraft) => {
+    // 回填配置
+    setSql(draft.sqlText)
+
+    // 尝试补齐 datasource name
+    if (datasources) {
+      const matched = datasources.find((ds: any) => ds.id === draft.datasourceId)
+      setDatasource(draft.datasourceId, matched ? matched.name : null)
+    } else {
+      setDatasource(draft.datasourceId, null)
+    }
+
+    setChartConfig(draft.chartConfig)
+    setResultView('chart')
+
+    // 关闭 Drawer
+    setChartDraftDrawerOpen(false)
+
+    // 提示用户手动执行
+    message.info('图表草稿已加载，请点击「执行」按钮运行查询')
+  }, [setSql, setDatasource, setChartConfig, setResultView, datasources])
+
   if (dsLoading) {
     return <Spin style={{ display: 'block', margin: '64px auto' }} />
   }
@@ -130,6 +158,15 @@ const SqlWorkbenchPage: React.FC = () => {
           onSave={handleSave}
           onClear={handleClear}
         />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <Button
+            size="small"
+            icon={<FileTextOutlined />}
+            onClick={() => setChartDraftDrawerOpen(true)}
+          >
+            图表草稿
+          </Button>
+        </div>
         <SqlEditor onExecute={handleExecute} onSave={handleSave} />
         <ResultPanel />
         <div style={{ flex: 1, overflow: 'auto' }}>
@@ -143,6 +180,17 @@ const SqlWorkbenchPage: React.FC = () => {
         draft={null}
         onClose={() => setDraftModalOpen(false)}
       />
+
+      {/* Chart Draft Drawer */}
+      <Drawer
+        title="图表草稿"
+        placement="right"
+        width={360}
+        open={chartDraftDrawerOpen}
+        onClose={() => setChartDraftDrawerOpen(false)}
+      >
+        <ChartDraftList onLoad={handleLoadChartDraft} />
+      </Drawer>
     </div>
   )
 }
