@@ -4,6 +4,8 @@ import ChartPreview from './ChartPreview'
 
 const mockStore = vi.hoisted(() => ({
   result: null as any,
+  sql: 'SELECT * FROM users',
+  datasourceId: 1 as number | null,
   chartConfig: { chartType: 'bar' as const, xColumn: null as string | null, yColumn: null as string | null },
   setChartConfig: vi.fn(),
 }))
@@ -11,6 +13,17 @@ const mockStore = vi.hoisted(() => ({
 vi.mock('../stores/sqlWorkbenchStore', () => ({
   useSqlWorkbenchStore: (selector: any) => selector(mockStore),
 }))
+
+vi.mock('./ChartDraftSaveModal', async () => {
+  const React = await import('react')
+  return {
+    default: function MockChartDraftSaveModal({ open }: { open: boolean }) {
+      return open
+        ? React.createElement('div', { 'data-testid': 'chart-draft-save-modal' }, '保存图表草稿')
+        : null
+    },
+  }
+})
 
 vi.mock('echarts/core', () => ({
   init: vi.fn(() => ({
@@ -139,12 +152,17 @@ describe('ChartPreview', () => {
     expect(screen.getByText(/数据点过多，仅显示前 100 个分组/)).toBeInTheDocument()
   })
 
-  it('switches to pie chart type', () => {
+  it('shows save chart button in chart mode', () => {
     mockStore.result = { columns: ['category', 'amount'], rows: [['A', '100']], row_count: 1 }
     render(<ChartPreview />)
-    const pieTab = screen.getByText('饼图')
-    fireEvent.click(pieTab)
-    expect(mockStore.setChartConfig).toHaveBeenCalledWith(expect.objectContaining({ chartType: 'pie' }))
+    expect(screen.getByRole('button', { name: /保存图表/ })).toBeInTheDocument()
+  })
+
+  it('opens save modal when save chart button is clicked', () => {
+    mockStore.result = { columns: ['category', 'amount'], rows: [['A', '100']], row_count: 1 }
+    render(<ChartPreview />)
+    fireEvent.click(screen.getByRole('button', { name: /保存图表/ }))
+    expect(screen.getByTestId('chart-draft-save-modal')).toBeInTheDocument()
   })
 })
 
