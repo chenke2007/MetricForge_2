@@ -89,6 +89,7 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     from .api.llm_settings import router as llm_settings_router
     from .api.ask import router as ask_router
     from .api.sql_workbench import router as sql_workbench_router
+    from .api.chart_drafts import router as chart_drafts_router
     from .web.routes import router as web_router
 
     app.include_router(datasources_router, prefix="/api/datasources", tags=["数据源"])
@@ -103,6 +104,8 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     app.include_router(ask_router, prefix="/api/ask", tags=["AI 问数"])
 
     app.include_router(sql_workbench_router, prefix="/api/sql", tags=["SQL 工作台"])
+
+    app.include_router(chart_drafts_router, prefix="/api", tags=["图表草稿"])
 
     # Register Web UI routes.
     app.include_router(web_router, prefix="/web", tags=["Web 页面"])
