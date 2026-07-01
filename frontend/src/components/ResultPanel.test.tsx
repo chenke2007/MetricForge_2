@@ -25,6 +25,12 @@ vi.mock('./ResultTable', () => ({
   default: () => <div data-testid="result-table">ResultTable</div>,
 }))
 
+// ChartPreview renders ChartDraftSaveModal which needs @tanstack/react-query.
+// Mock it at the component level so the test doesn't need a QueryClientProvider.
+vi.mock('./ChartDraftSaveModal', () => ({
+  default: () => null,
+}))
+
 vi.mock('echarts/core', () => ({
   init: vi.fn(() => ({
     setOption: vi.fn(),
