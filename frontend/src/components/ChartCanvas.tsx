@@ -11,23 +11,16 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
 import { aggregateChartData, ChartType } from '../utils/chartData'
 
-const registered = { value: false }
-
-function ensureRegistered() {
-  if (!registered.value) {
-    echartsCore.use([
-      BarChart,
-      LineChart,
-      PieChart,
-      GridComponent,
-      TooltipComponent,
-      LegendComponent,
-      TitleComponent,
-      CanvasRenderer,
-    ])
-    registered.value = true
-  }
-}
+echartsCore.use([
+  BarChart,
+  LineChart,
+  PieChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  TitleComponent,
+  CanvasRenderer,
+])
 
 interface ChartCanvasProps {
   chartType: ChartType
@@ -50,7 +43,6 @@ const ChartCanvas: React.FC<ChartCanvasProps> = ({
   useEffect(() => {
     if (!containerRef.current) return
 
-    ensureRegistered()
     chartRef.current = echartsCore.init(containerRef.current)
 
     return () => {

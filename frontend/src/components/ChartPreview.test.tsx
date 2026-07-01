@@ -127,6 +127,18 @@ describe('ChartPreview', () => {
     expect(screen.getByTestId('chart-canvas')).toBeInTheDocument()
   })
 
+  it('shows truncation warning when data exceeds 100 groups', () => {
+    const rows = Array.from({ length: 101 }, (_, i) => [`item-${i}`, '1'])
+    mockStore.result = {
+      columns: ['category', 'amount'],
+      rows,
+      row_count: 101,
+    }
+    mockStore.chartConfig = { chartType: 'bar', xColumn: 'category', yColumn: 'amount' }
+    render(<ChartPreview />)
+    expect(screen.getByText(/数据点过多，仅显示前 100 个分组/)).toBeInTheDocument()
+  })
+
   it('switches to pie chart type', () => {
     mockStore.result = { columns: ['category', 'amount'], rows: [['A', '100']], row_count: 1 }
     render(<ChartPreview />)
