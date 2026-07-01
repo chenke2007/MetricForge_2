@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ChartType } from '../utils/chartData'
 
 export interface ExecutionResult {
   columns: string[]
@@ -8,6 +9,12 @@ export interface ExecutionResult {
   elapsed_ms: number
   error?: string | null
   history_id?: number | null
+}
+
+export interface ChartConfig {
+  chartType: ChartType
+  xColumn: string | null
+  yColumn: string | null
 }
 
 export interface WorkbenchState {
@@ -22,6 +29,8 @@ export interface WorkbenchState {
   isExecuting: boolean
   result: ExecutionResult | null
   resultVisible: boolean
+  resultView: 'table' | 'chart'
+  chartConfig: ChartConfig
 
   // 底部面板
   bottomTab: 'history' | 'drafts'
@@ -34,6 +43,8 @@ export interface WorkbenchState {
   setResult: (r: ExecutionResult | null) => void
   showResult: () => void
   hideResult: () => void
+  setResultView: (view: 'table' | 'chart') => void
+  setChartConfig: (config: ChartConfig) => void
   setBottomTab: (tab: 'history' | 'drafts') => void
   reset: () => void
 }
@@ -45,6 +56,12 @@ const initialState = {
   isExecuting: false,
   result: null,
   resultVisible: false,
+  resultView: 'table' as const,
+  chartConfig: {
+    chartType: 'bar' as const,
+    xColumn: null,
+    yColumn: null,
+  },
   bottomTab: 'history' as const,
 }
 
@@ -66,6 +83,10 @@ export const useSqlWorkbenchStore = create<WorkbenchState>((set) => ({
   showResult: () => set({ resultVisible: true }),
 
   hideResult: () => set({ resultVisible: false }),
+
+  setResultView: (view) => set({ resultView: view }),
+
+  setChartConfig: (config) => set({ chartConfig: config }),
 
   setBottomTab: (tab) => set({ bottomTab: tab }),
 
