@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Spin, Empty, Button, message, Drawer } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { FileTextOutlined } from '@ant-design/icons'
@@ -12,6 +12,10 @@ import BottomPanel from '../components/BottomPanel'
 import DraftFormModal from '../components/DraftFormModal'
 import ChartDraftList from '../components/ChartDraftList'
 import type { ChartDraft } from '../api/chartDrafts'
+
+const MIN_PANEL_WIDTH = 260
+const MAX_PANEL_WIDTH = 520
+const DEFAULT_PANEL_WIDTH = 320
 
 const SqlWorkbenchPage: React.FC = () => {
   const { data: datasources, isLoading: dsLoading } = useSqlDatasources()
@@ -123,6 +127,38 @@ const SqlWorkbenchPage: React.FC = () => {
     message.info('图表草稿已加载，请点击「执行」按钮运行查询')
   }, [setSql, setDatasource, setChartConfig, setResultView, datasources])
 
+  // ─── Resizable panel ───
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+
+    const startX = e.clientX
+    const startWidth = panelWidth
+    dragRef.current = { startX, startWidth }
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const newWidth = drag.startWidth + (ev.clientX - drag.startX)
+      setPanelWidth(Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, newWidth)))
+    }
+
+    const handleMouseUp = () => {
+      dragRef.current = null
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [panelWidth])
+
   if (dsLoading) {
     return <Spin style={{ display: 'block', margin: '64px auto' }} />
   }
@@ -139,16 +175,35 @@ const SqlWorkbenchPage: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 120px)' }}>
-      {/* Left: Schema Browser */}
+      {/* Left: Schema Browser (resizable) */}
+      <div style={{ width: panelWidth, minWidth: MIN_PANEL_WIDTH, overflow: 'auto', position: 'relative' }}>
+        <SchemaPanel />
+      </div>
+
+      {/* Drag Handle */}
       <div
+        onMouseDown={handleDragStart}
         style={{
-          width: 320,
-          minWidth: 320,
-          borderRight: '1px solid #f0f0f0',
-          overflow: 'auto',
+          width: 6,
+          cursor: 'col-resize',
+          background: 'transparent',
+          position: 'relative',
+          flexShrink: 0,
         }}
       >
-        <SchemaPanel />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 1,
+            background: '#e8e8e8',
+            transition: 'background 0.15s',
+          }}
+          className="metadata-resize-handle"
+        />
       </div>
 
       {/* Right: Editor + Results + History */}
