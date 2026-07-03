@@ -1,11 +1,12 @@
 import React, { useCallback, useState } from 'react'
-import { message, Layout, Typography } from 'antd'
+import { message, Layout, Typography, Divider } from 'antd'
 import { ClearOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import SessionList from '../components/SessionList'
 import MessageThread from '../components/MessageThread'
 import ToolCallIndicator from '../components/ToolCallIndicator'
 import AskInput from '../components/AskInput'
+import AgentNav from '../components/AgentNav'
 import {
   useAskMessages,
   useCreateMessage,
@@ -146,69 +147,84 @@ const AskWorkbenchPage: React.FC = () => {
     [currentSessionId, createMessage, qc, startStream, appendToken, stopStream, setStreamingActive, setToolCalls]
   )
 
+  const [agentMode, setAgentMode] = useState<string>('ask')
+
   return (
-    <Layout style={{ height: 'calc(100vh - 104px)', background: '#fff' }}>
-      <Sider
-        width={220}
+    <>
+      <div
         style={{
-          background: '#fafafa',
-          borderRight: '1px solid #f0f0f0',
-          overflow: 'auto',
+          background: '#fff',
+          borderRadius: 8,
+          padding: '0 4px',
+          marginBottom: 12,
         }}
       >
-        <SessionList
-          currentId={currentSessionId}
-          onSelect={(id) => setCurrentSession(id || null)}
-        />
-      </Sider>
-      <Content
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        {currentSessionId ? (
-          <>
-            <MessageThread
-              messages={messages ?? []}
-              isLoading={messagesLoading}
-            />
-            {toolCalls && <ToolCallIndicator tool_calls={toolCalls} />}
+        <AgentNav activeKey={agentMode} onChange={setAgentMode} />
+        <Divider style={{ margin: 0 }} />
+      </div>
+      <Layout style={{ height: 'calc(100vh - 184px)', background: '#fff' }}>
+        <Sider
+          width={220}
+          style={{
+            background: '#fafafa',
+            borderRight: '1px solid #f0f0f0',
+            overflow: 'auto',
+          }}
+        >
+          <SessionList
+            currentId={currentSessionId}
+            onSelect={(id) => setCurrentSession(id || null)}
+          />
+        </Sider>
+        <Content
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {currentSessionId ? (
+            <>
+              <MessageThread
+                messages={messages ?? []}
+                isLoading={messagesLoading}
+              />
+              {toolCalls && <ToolCallIndicator tool_calls={toolCalls} />}
+              <div
+                style={{
+                  borderTop: '1px solid #f0f0f0',
+                  padding: '12px 24px',
+                  background: '#fff',
+                }}
+              >
+                <AskInput onSend={handleSend} loading={createMessage.isPending} disabled={streamingActive} />
+              </div>
+            </>
+          ) : (
             <div
               style={{
-                borderTop: '1px solid #f0f0f0',
-                padding: '12px 24px',
-                background: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
               }}
             >
-              <AskInput onSend={handleSend} loading={createMessage.isPending} disabled={streamingActive} />
+              <div style={{ textAlign: 'center' }}>
+                <ClearOutlined
+                  style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }}
+                />
+                <Typography.Title level={4} type="secondary">
+                  选择或创建一个对话开始提问
+                </Typography.Title>
+                <Typography.Text type="secondary">
+                  左侧列表管理你的所有对话历史
+                </Typography.Text>
+              </div>
             </div>
-          </>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-            }}
-          >
-            <div style={{ textAlign: 'center' }}>
-              <ClearOutlined
-                style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }}
-              />
-              <Typography.Title level={4} type="secondary">
-                选择或创建一个对话开始提问
-              </Typography.Title>
-              <Typography.Text type="secondary">
-                左侧列表管理你的所有对话历史
-              </Typography.Text>
-            </div>
-          </div>
-        )}
-      </Content>
-    </Layout>
+          )}
+        </Content>
+      </Layout>
+    </>
   )
 }
 

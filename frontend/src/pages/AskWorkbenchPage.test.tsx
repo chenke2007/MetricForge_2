@@ -44,6 +44,18 @@ vi.mock('../components/ToolCallIndicator', () => ({
   default: () => <div data-testid="tool-call-indicator">ToolCallIndicator</div>,
 }))
 
+// Mock AgentNav to keep tests focused on page integration
+vi.mock('../components/AgentNav', () => ({
+  default: () => <div data-testid="agent-nav">AgentNav</div>,
+  AGENTS: [
+    { key: 'ask', label: 'AI 问数', enabled: true, badge: '可用' },
+    { key: 'insight', label: 'AI 解读', enabled: false, badge: '规划中' },
+    { key: 'report', label: 'AI 报告', enabled: false, badge: '规划中' },
+    { key: 'build', label: 'AI 搭建', enabled: false, badge: '规划中' },
+    { key: 'explore', label: 'AI 洞察', enabled: false, badge: '规划中' },
+  ],
+}))
+
 const createWrapper = () => {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -65,5 +77,10 @@ describe('AskWorkbenchPage', () => {
     render(<AskWorkbenchPage />, { wrapper: createWrapper() })
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByText('选择或创建一个对话开始提问')).toBeInTheDocument()
+  })
+
+  it('renders AgentNav component for agent capabilities', () => {
+    render(<AskWorkbenchPage />, { wrapper: createWrapper() })
+    expect(screen.getByTestId('agent-nav')).toBeInTheDocument()
   })
 })
