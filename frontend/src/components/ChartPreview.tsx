@@ -5,6 +5,7 @@ import ChartControls from './ChartControls'
 import ChartCanvas from './ChartCanvas'
 import ChartDraftSaveModal from './ChartDraftSaveModal'
 import { aggregateChartData } from '../utils/chartData'
+import type { AiChartSpec } from '../types/aiAsk'
 
 const TRUNCATION_MESSAGE = '数据点过多，仅显示前 100 个分组'
 
@@ -56,11 +57,17 @@ const ChartPreview: React.FC = () => {
       {!hasSelection && <Empty description="请选择 X 轴字段和 Y 轴字段" />}
       {hasSelection && !errorMessage && (
         <ChartCanvas
-          chartType={chartConfig.chartType}
-          xColumn={chartConfig.xColumn}
-          yColumn={chartConfig.yColumn}
+          spec={{
+            title: `${chartConfig.chartType.toUpperCase()} 图表`,
+            chartType: chartConfig.chartType,
+            xField: chartConfig.xColumn ?? undefined,
+            yFields: chartConfig.yColumn ? [chartConfig.yColumn] : [],
+            rationale: '',
+            limitations: [],
+          } satisfies AiChartSpec}
           columns={result.columns}
           rows={result.rows}
+          height={400}
         />
       )}
       <ChartDraftSaveModal
