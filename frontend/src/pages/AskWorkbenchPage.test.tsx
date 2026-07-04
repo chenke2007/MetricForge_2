@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import AskWorkbenchPage from './AskWorkbenchPage'
-import { MOCK_ASK_RESPONSE } from '../api/aiAsk.mock'
 
 // --- Mocks ---
 
@@ -35,13 +34,24 @@ let mockAiAskState: Record<string, any> = {
   selectedTables: [],
   currentResponse: null,
   isAnalyzing: false,
+  isExecuting: false,
   activeChartIndex: 0,
+  analysisStep: 0,
+  adapterName: 'MockAdapter',
+  responseValidation: null,
+  error: null,
   responseHistory: {},
   setDatasource: vi.fn(),
   setSelectedTables: vi.fn(),
   setCurrentResponse: vi.fn(),
   setAnalyzing: vi.fn(),
+  setExecuting: vi.fn(),
   setActiveChart: vi.fn(),
+  setAnalysisStep: vi.fn(),
+  setAdapterName: vi.fn(),
+  setResponseValidation: vi.fn(),
+  setError: vi.fn(),
+  clearError: vi.fn(),
   saveResponseForMessage: vi.fn(),
   getResponseForMessage: vi.fn(),
   reset: vi.fn(),
@@ -64,6 +74,28 @@ vi.mock('../api/askSessions', () => ({
     mutateAsync: vi.fn().mockResolvedValue({ id: 1 }),
     isPending: false,
   })),
+}))
+
+vi.mock('../api/aiAsk', () => ({
+  useAiAskService: vi.fn(() => ({
+    name: 'MockAdapter',
+    analyze: vi.fn(),
+    getChartData: vi.fn(() => ({ columns: ['region', 'revenue'], rows: [['华东', 1000]], isEmpty: false })),
+    isAvailable: vi.fn(() => true),
+    validate: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
+  })),
+  AiAskError: class extends Error {
+    code: string
+    constructor(m: string, code: string) {
+      super(m)
+      this.code = code
+      this.name = 'AiAskError'
+    }
+  },
+  getAiAskErrorMessage: vi.fn((code: string) => {
+    const map: Record<string, string> = { UNKNOWN: '分析异常', ANALYSIS_TIMEOUT: '分析超时' }
+    return map[code] || '异常'
+  }),
 }))
 
 vi.mock('../components/SessionList', () => ({
@@ -142,13 +174,24 @@ describe('AskWorkbenchPage', () => {
       selectedTables: [],
       currentResponse: null,
       isAnalyzing: false,
+      isExecuting: false,
       activeChartIndex: 0,
+      analysisStep: 0,
+      adapterName: 'MockAdapter',
+      responseValidation: null,
+      error: null,
       responseHistory: {},
       setDatasource: vi.fn(),
       setSelectedTables: vi.fn(),
       setCurrentResponse: vi.fn(),
       setAnalyzing: vi.fn(),
+      setExecuting: vi.fn(),
       setActiveChart: vi.fn(),
+      setAnalysisStep: vi.fn(),
+      setAdapterName: vi.fn(),
+      setResponseValidation: vi.fn(),
+      setError: vi.fn(),
+      clearError: vi.fn(),
       saveResponseForMessage: vi.fn(),
       getResponseForMessage: vi.fn(),
       reset: vi.fn(),
@@ -183,7 +226,14 @@ describe('AskWorkbenchPage', () => {
 
   it('shows AI result components when currentResponse is set', () => {
     mockAskStore.currentSessionId = 1
-    mockAiAskState.currentResponse = MOCK_ASK_RESPONSE
+    mockAiAskState.currentResponse = {
+      question: 'test',
+      intent: { metrics: [], dimensions: [], filters: [], timeRange: undefined },
+      sqlPlan: { datasourceId: 0, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+      chartSuggestions: [{ title: '图', chartType: 'bar', yFields: ['x'], rationale: 'r', limitations: [] }],
+      narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+      semanticGaps: [],
+    }
     mockAiAskState.isAnalyzing = false
     renderPage()
     expect(screen.getByTestId('intent-card')).toBeInTheDocument()
@@ -192,11 +242,21 @@ describe('AskWorkbenchPage', () => {
     expect(screen.getByTestId('ai-narrative')).toBeInTheDocument()
   })
 
-  it('shows analyzing spinner when isAnalyzing is true', () => {
+  it('shows analyzing skeleton when isAnalyzing is true', () => {
     mockAskStore.currentSessionId = 1
     mockAiAskState.currentResponse = null
     mockAiAskState.isAnalyzing = true
+    mockAiAskState.analysisStep = 2
     renderPage()
     expect(screen.getByText('正在分析你的问题...')).toBeInTheDocument()
+  })
+
+  it('shows error alert when error is set', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = null
+    mockAiAskState.isAnalyzing = false
+    mockAiAskState.error = { code: 'ANALYSIS_TIMEOUT', message: '超时', name: 'AiAskError' }
+    renderPage()
+    expect(screen.getByText('分析异常')).toBeInTheDocument()
   })
 })

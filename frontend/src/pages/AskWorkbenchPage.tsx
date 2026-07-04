@@ -1,6 +1,6 @@
-import React, { useCallback } from 'react'
-import { Layout, Typography, Spin, message } from 'antd'
-import { ClearOutlined } from '@ant-design/icons'
+import React, { useCallback, useRef } from 'react'
+import { Layout, Typography, message, Alert, Button, Space } from 'antd'
+import { ClearOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import SessionList from '../components/SessionList'
 import MessageThread from '../components/MessageThread'
@@ -13,10 +13,10 @@ import SqlPlan from '../components/SqlPlan'
 import AiChartBoard from '../components/AiChartBoard'
 import AiNarrative from '../components/AiNarrative'
 import SemanticGapAlert from '../components/SemanticGapAlert'
-import { MOCK_ASK_RESPONSE, MOCK_CHART_DATA } from '../api/aiAsk.mock'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
+import { useAiAskService, AiAskError, getAiAskErrorMessage } from '../api/aiAsk'
 
 const { Sider, Content } = Layout
 
@@ -27,34 +27,29 @@ const AskWorkbenchPage: React.FC = () => {
   const createSession = useCreateSession()
   const navigate = useNavigate()
 
-  const { data: messages, isLoading: messagesLoading } =
-    useAskMessages(currentSessionId)
+  const { data: messages, isLoading: messagesLoading } = useAskMessages(currentSessionId)
 
   const {
     datasourceId,
+    datasourceName,
+    selectedTables,
     currentResponse,
     isAnalyzing,
+    error: storeError,
     activeChartIndex,
+    analysisStep,
     setCurrentResponse,
     setAnalyzing,
     setActiveChart,
+    setAnalysisStep,
+    setAdapterName,
+    setResponseValidation,
+    setError,
+    clearError,
   } = useAiAskStore()
 
-  // 模拟 AI 分析
-  const simulateAiAnalysis = useCallback(async (question: string) => {
-    setAnalyzing(true)
-    await new Promise((r) => setTimeout(r, 800 + Math.random() * 700))
-    const mockResponse = {
-      ...MOCK_ASK_RESPONSE,
-      question,
-      sqlPlan: {
-        ...MOCK_ASK_RESPONSE.sqlPlan,
-        ...(datasourceId ? { datasourceId } : {}),
-      },
-    }
-    setCurrentResponse(mockResponse)
-    setAnalyzing(false)
-  }, [datasourceId, setAnalyzing, setCurrentResponse])
+  const adapter = useAiAskService()
+  const chartDataRef = useRef<{ columns: string[]; rows: any[][] } | null>(null)
 
   const handleSend = useCallback(async (content: string) => {
     let sessionId = currentSessionId
@@ -68,21 +63,64 @@ const AskWorkbenchPage: React.FC = () => {
         return
       }
     }
+
     try {
       await createMessage.mutateAsync({ sessionId, content })
-      await simulateAiAnalysis(content)
     } catch {
       message.error('发送失败，请重试')
+      return
     }
-  }, [currentSessionId, createSession, setCurrentSession, createMessage, simulateAiAnalysis])
 
-  const handlePromptSelect = useCallback((prompt: string) => {
-    handleSend(prompt)
-  }, [handleSend])
+    // Use adapter
+    clearError()
+    setAdapterName(adapter.name)
+    setAnalyzing(true)
+    setAnalysisStep(1)
 
-  const handleAskQuestion = useCallback((question: string) => {
-    handleSend(question)
-  }, [handleSend])
+    try {
+      // Simulate step progression
+      const stepInterval = setInterval(() => {
+        const current = useAiAskStore.getState().analysisStep
+        if (current < 5) {
+          useAiAskStore.getState().setAnalysisStep(current + 1)
+        } else {
+          clearInterval(stepInterval)
+        }
+      }, 800)
+
+      const resp = await adapter.analyze(content, {
+        datasourceId,
+        datasourceName,
+        selectedTables,
+        options: { mockDelay: [1500, 2500] },
+      })
+
+      clearInterval(stepInterval)
+      setAnalysisStep(5)
+
+      // Validate
+      const validation = adapter.validate(resp as any)
+      setResponseValidation(validation)
+
+      // Store chart data from adapter
+      chartDataRef.current = adapter.getChartData(resp.chartSuggestions[0], resp as any)
+
+      setCurrentResponse(resp as any)
+      setAnalyzing(false)
+    } catch (err) {
+      setAnalyzing(false)
+      if (err instanceof AiAskError) {
+        setError(err)
+      } else {
+        setError(new AiAskError('分析异常', 'UNKNOWN'))
+      }
+    }
+  }, [
+    currentSessionId, createSession, setCurrentSession,
+    createMessage, datasourceId, datasourceName, selectedTables,
+    adapter, clearError, setAdapterName, setAnalyzing, setAnalysisStep,
+    setResponseValidation, setCurrentResponse, setError,
+  ])
 
   const handleOpenInWorkbench = useCallback((sql: string, dsId: number) => {
     const encoded = encodeURIComponent(sql)
@@ -92,8 +130,8 @@ const AskWorkbenchPage: React.FC = () => {
   const [agentMode] = React.useState('ask')
 
   const showEmptyState = !currentSessionId
-  const showWelcomeState = currentSessionId && !currentResponse && !isAnalyzing
-  const showResultsState = currentSessionId && (currentResponse || isAnalyzing)
+  const showWelcomeState = currentSessionId && !currentResponse && !isAnalyzing && !storeError
+  const showResultsState = currentSessionId && (currentResponse || isAnalyzing || storeError)
 
   return (
     <Layout style={{ height: 'calc(100vh - 104px)', background: '#fff' }}>
@@ -171,7 +209,6 @@ const AskWorkbenchPage: React.FC = () => {
               padding: '16px 24px',
             }}
           >
-            {/* Messages area */}
             {messages && (
               <MessageThread
                 messages={messages ?? []}
@@ -179,7 +216,6 @@ const AskWorkbenchPage: React.FC = () => {
               />
             )}
 
-            {/* Welcome hero + input */}
             <div
               style={{
                 flex: 1,
@@ -225,7 +261,7 @@ const AskWorkbenchPage: React.FC = () => {
                   />
                 </div>
 
-                <PromptCards onSelect={handlePromptSelect} />
+                <PromptCards onSelect={handleSend} />
               </div>
             </div>
           </div>
@@ -241,7 +277,6 @@ const AskWorkbenchPage: React.FC = () => {
               overflow: 'hidden',
             }}
           >
-            {/* Message history + AI results area */}
             <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px' }}>
               {messages && (
                 <MessageThread
@@ -250,40 +285,89 @@ const AskWorkbenchPage: React.FC = () => {
                 />
               )}
 
-              {/* AI analyzing indicator */}
+              {/* Error state */}
+              {storeError && !isAnalyzing && (
+                <Alert
+                  type="error"
+                  showIcon
+                  style={{ borderRadius: 8, marginBottom: 12 }}
+                  message={
+                    <div>
+                      <div style={{ fontWeight: 500, marginBottom: 4 }}>分析异常</div>
+                      <div style={{ fontSize: 12 }}>{getAiAskErrorMessage(storeError.code)}</div>
+                      {storeError.code && (
+                        <Space style={{ marginTop: 6 }}>
+                          <Button size="small" icon={<ReloadOutlined />} onClick={() => clearError()}>关闭</Button>
+                        </Space>
+                      )}
+                    </div>
+                  }
+                />
+              )}
+
+              {/* Analyzing with skeleton + step indicator */}
               {isAnalyzing && (
-                <div style={{ padding: '20px 0', textAlign: 'center' }}>
-                  <Spin />
-                  <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+                <div style={{ padding: '20px 24px', textAlign: 'center' }}>
+                  <div style={{
+                    display: 'flex', gap: 12, justifyContent: 'center', marginBottom: 16,
+                  }}>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} style={{
+                        width: 100, height: 60, borderRadius: 8,
+                        background: '#f0f0f0', animation: 'pulse 1.5s ease-in-out infinite',
+                      }} />
+                    ))}
+                  </div>
+                  <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
                     正在分析你的问题...
                   </Typography.Text>
+                  <div style={{ maxWidth: 320, margin: '0 auto', textAlign: 'left' }}>
+                    {[
+                      'AI 正在理解你的问题',
+                      '正在分析查询计划',
+                      '正在获取数据',
+                      '正在生成图表',
+                      '正在生成解读摘要',
+                    ].map((label, i) => {
+                      const stepNum = i + 1
+                      let icon = '◻'
+                      let color = '#d9d9d9'
+                      if (stepNum < analysisStep) { icon = '✅'; color = '#52c41a' }
+                      else if (stepNum === analysisStep) { icon = '⟳'; color = '#4E7BF5' }
+                      return (
+                        <div key={i} style={{
+                          fontSize: 12, color, padding: '4px 0', display: 'flex', alignItems: 'center', gap: 6,
+                        }}>
+                          <span>{icon}</span>
+                          <span>{label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
               {/* AI result cards */}
               {currentResponse && !isAnalyzing && (
                 <div>
-                  {/* Intent card */}
                   <IntentCard
                     intent={currentResponse.intent}
                     semanticGaps={currentResponse.semanticGaps}
                   />
 
-                  {/* Semantic gap alert */}
                   {currentResponse.semanticGaps.filter(
                     (g) => g.reason === 'not_found'
                   ).length > 0 && (
                     <SemanticGapAlert gaps={currentResponse.semanticGaps} />
                   )}
 
-                  {/* SQL plan */}
                   <SqlPlan
                     sqlPlan={currentResponse.sqlPlan}
                     onOpenInWorkbench={handleOpenInWorkbench}
                   />
 
                   {/* Result summary table */}
-                  {currentResponse.resultSummary && (
+                  {currentResponse.resultSummary && chartDataRef.current && (
                     <div
                       style={{
                         marginBottom: 12,
@@ -314,7 +398,7 @@ const AskWorkbenchPage: React.FC = () => {
                       >
                         <thead>
                           <tr style={{ background: '#f5f5f5' }}>
-                            {MOCK_CHART_DATA.columns.map((col) => (
+                            {chartDataRef.current.columns.map((col) => (
                               <th
                                 key={col}
                                 style={{
@@ -332,7 +416,7 @@ const AskWorkbenchPage: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {MOCK_CHART_DATA.rows.map((row, ri) => (
+                          {chartDataRef.current.rows.map((row, ri) => (
                             <tr key={ri}>
                               {row.map((cell: any, ci: number) => (
                                 <td
@@ -361,17 +445,16 @@ const AskWorkbenchPage: React.FC = () => {
                   {currentResponse.chartSuggestions.length > 0 && (
                     <AiChartBoard
                       chartSuggestions={currentResponse.chartSuggestions}
-                      columns={MOCK_CHART_DATA.columns}
-                      rows={MOCK_CHART_DATA.rows}
+                      columns={chartDataRef.current?.columns ?? []}
+                      rows={chartDataRef.current?.rows ?? []}
                       activeIndex={activeChartIndex}
                       onActiveChange={setActiveChart}
                     />
                   )}
 
-                  {/* AI narrative */}
                   <AiNarrative
                     narrative={currentResponse.narrative}
-                    onAskQuestion={handleAskQuestion}
+                    onAskQuestion={handleSend}
                   />
                 </div>
               )}
