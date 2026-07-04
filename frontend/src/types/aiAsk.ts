@@ -8,7 +8,7 @@ export type GapReason = 'not_found' | 'ambiguous' | 'incomplete'
 export interface MetricCard {
   label: string
   value: string
-  change?: string
+  change?: string | null
   changeDirection?: 'up' | 'down' | 'flat'
 }
 
