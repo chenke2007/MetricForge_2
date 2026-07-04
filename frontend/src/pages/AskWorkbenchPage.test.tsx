@@ -26,6 +26,10 @@ vi.mock('../api/askSessions', () => ({
     mutateAsync: vi.fn(),
     isPending: false,
   })),
+  useCreateSession: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({ id: 1 }),
+    isPending: false,
+  })),
 }))
 
 vi.mock('../components/SessionList', () => ({
@@ -37,7 +41,9 @@ vi.mock('../components/MessageThread', () => ({
 }))
 
 vi.mock('../components/AskInput', () => ({
-  default: () => <div data-testid="ask-input">AskInput</div>,
+  default: () => (
+    <div data-testid="ask-input">AskInput</div>
+  ),
 }))
 
 vi.mock('../components/ToolCallIndicator', () => ({
@@ -54,6 +60,16 @@ vi.mock('../components/AgentNav', () => ({
     { key: 'build', label: 'AI 搭建', enabled: false, badge: '规划中' },
     { key: 'explore', label: 'AI 洞察', enabled: false, badge: '规划中' },
   ],
+}))
+
+vi.mock('../components/DataScopeSelector', () => ({
+  default: () => <div data-testid="data-scope-selector">DataScopeSelector</div>,
+}))
+
+vi.mock('../components/PromptCards', () => ({
+  default: () => (
+    <div data-testid="prompt-cards">PromptCards</div>
+  ),
 }))
 
 const createWrapper = () => {
@@ -73,14 +89,30 @@ describe('AskWorkbenchPage', () => {
     mockStore.currentSessionId = null
   })
 
-  it('renders without crashing and shows empty state when no session selected', () => {
+  it('renders without crashing and shows welcome state when no session selected', () => {
     render(<AskWorkbenchPage />, { wrapper: createWrapper() })
+    // Sidebar elements (always visible)
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
-    expect(screen.getByText('选择或创建一个对话开始提问')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-nav')).toBeInTheDocument()
+    // Welcome state elements
+    expect(screen.getByText('MetricForge 智能问数')).toBeInTheDocument()
+    expect(screen.getByTestId('ask-input')).toBeInTheDocument()
+    expect(screen.getByTestId('prompt-cards')).toBeInTheDocument()
   })
 
   it('renders AgentNav component for agent capabilities', () => {
     render(<AskWorkbenchPage />, { wrapper: createWrapper() })
     expect(screen.getByTestId('agent-nav')).toBeInTheDocument()
+  })
+
+  it('shows message thread when session is selected', () => {
+    mockStore.currentSessionId = 1
+    render(<AskWorkbenchPage />, { wrapper: createWrapper() })
+    expect(screen.getByTestId('message-thread')).toBeInTheDocument()
+  })
+
+  it('shows data scope selector in sidebar', () => {
+    render(<AskWorkbenchPage />, { wrapper: createWrapper() })
+    expect(screen.getByTestId('data-scope-selector')).toBeInTheDocument()
   })
 })
