@@ -33,6 +33,7 @@ export interface AskMessage {
   tokens_completion?: number | null
   created_at: string
   tool_calls?: ToolCallRecord[]
+  response_json?: Record<string, unknown> | null
 }
 
 export interface CreateSessionInput {
