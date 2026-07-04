@@ -7,6 +7,7 @@ import MessageThread from '../components/MessageThread'
 import ToolCallIndicator from '../components/ToolCallIndicator'
 import AskInput from '../components/AskInput'
 import AgentNav from '../components/AgentNav'
+import DataScopeSelector from '../components/DataScopeSelector'
 import {
   useAskMessages,
   useCreateMessage,
@@ -171,10 +172,15 @@ const AskWorkbenchPage: React.FC = () => {
             overflow: 'auto',
           }}
         >
-          <SessionList
-            currentId={currentSessionId}
-            onSelect={(id) => setCurrentSession(id || null)}
-          />
+          <div style={{ padding: '0 12px' }}>
+            <DataScopeSelector />
+          </div>
+          <div style={{ padding: '0 12px' }}>
+            <SessionList
+              currentId={currentSessionId}
+              onSelect={(id) => setCurrentSession(id || null)}
+            />
+          </div>
         </Sider>
         <Content
           style={{
