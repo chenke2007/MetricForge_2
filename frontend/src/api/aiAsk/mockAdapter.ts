@@ -1,11 +1,14 @@
 // frontend/src/api/aiAsk/mockAdapter.ts
 import type { AiAskAdapter, AiAskContext, ChartDataResult } from './adapter'
 import type { AiAskResponse, AiChartSpec } from '../../types/aiAsk'
+import type { FollowUpType } from '../../types/aiAsk'
 import { AiAskError } from './errors'
 import { validateAiAskResponse } from './validator'
 import { MOCK_SCENARIOS } from './scenarios'
 import type { MockScenario } from './scenarios'
 import { recommendCharts } from './recommendation'
+import { detectFollowUpType } from './followUpDetector'
+import { matchFollowUpScenario, FOLLOW_UP_SCENARIOS } from './scenarios/followUpScenarios'
 
 export class MockAdapter implements AiAskAdapter {
   readonly name = 'MockAdapter'
@@ -25,7 +28,88 @@ export class MockAdapter implements AiAskAdapter {
     return MOCK_SCENARIOS[MOCK_SCENARIOS.length - 1] // default
   }
 
+  private getPreviousResponse(messageHistory?: AiAskContext['messageHistory']): AiAskResponse | null {
+    if (!messageHistory || messageHistory.length === 0) return null
+    const lastAssistant = [...messageHistory].reverse().find(m => m.role === 'assistant')
+    if (!lastAssistant?.responseJson) return null
+    return lastAssistant.responseJson as unknown as AiAskResponse
+  }
+
+  private async analyzeFollowUp(
+    question: string,
+    context: AiAskContext,
+    previousResponse: AiAskResponse,
+  ): Promise<AiAskResponse> {
+    const forceType = context.options?.forceFollowUpType
+    const followUp = forceType
+      ? { type: forceType as FollowUpType, confidence: 'high' as const, inferenceReason: `forceFollowUpType override: ${forceType}` }
+      : detectFollowUpType(question, previousResponse)
+
+    const scenario = this.matchScenario(previousResponse.question)
+    const followUpData = matchFollowUpScenario(scenario.id, followUp.type, question)
+
+    // Base: inherit from previous response
+    const response: AiAskResponse = {
+      question,
+      intent: previousResponse.intent,
+      sqlPlan: {
+        ...previousResponse.sqlPlan,
+        ...(context.datasourceId ? { datasourceId: context.datasourceId } : {}),
+        ...(context.datasourceName ? { datasourceName: context.datasourceName } : {}),
+      },
+      resultSummary: previousResponse.resultSummary,
+      chartSuggestions: previousResponse.chartSuggestions,
+      narrative: previousResponse.narrative,
+      semanticGaps: previousResponse.semanticGaps,
+      followUp,
+    }
+
+    if (followUpData) {
+      // Use follow-up scenario data to override
+      response.intent = followUpData.response.intent
+      response.sqlPlan = {
+        ...followUpData.response.sqlPlan,
+        ...(context.datasourceId ? { datasourceId: context.datasourceId } : {}),
+        ...(context.datasourceName ? { datasourceName: context.datasourceName } : {}),
+      }
+      response.resultSummary = followUpData.response.resultSummary
+      response.narrative = followUpData.response.narrative
+
+      // Use recommendCharts for follow-up scenarios too
+      const chartData = followUpData.chartData ?? scenario.chartData
+      const recommended = recommendCharts({
+        columns: chartData.columns,
+        sampleRows: chartData.rows.slice(0, 5),
+        question,
+        intent: followUpData.response.intent,
+      })
+      response.chartSuggestions = recommended
+      response.contextSummary = followUpData.contextSummary
+    } else {
+      // No specific follow-up data — reuse previous response but mark as follow-up
+      response.contextSummary = `基于上一轮 "${previousResponse.question}" 继续分析`
+    }
+
+    // Validate
+    const validation = validateAiAskResponse(response)
+    if (!validation.valid) {
+      throw new AiAskError('Mock adapter produced invalid follow-up response', 'INVALID_RESPONSE', {
+        errors: validation.errors,
+      })
+    }
+
+    return response
+  }
+
   async analyze(question: string, context: AiAskContext): Promise<AiAskResponse> {
+    const previousResponse = this.getPreviousResponse(context.messageHistory)
+
+    if (previousResponse) {
+      // Multi-turn path — completely independent from single-turn logic
+      return this.analyzeFollowUp(question, context, previousResponse)
+    }
+
+    // Single-turn path (existing logic)
     const { mockDelay, mockFailureRate } = context.options ?? {}
 
     // simulated delay
@@ -91,6 +175,23 @@ export class MockAdapter implements AiAskAdapter {
   }
 
   getChartData(spec: AiChartSpec, response: AiAskResponse): ChartDataResult {
+    // Check for follow-up scenario chart data — search directly through FOLLOW_UP_SCENARIOS
+    if (response.followUp) {
+      for (const fus of FOLLOW_UP_SCENARIOS) {
+        if (fus.followUpType !== response.followUp.type) continue
+        if (!fus.chartData) continue
+        for (const pattern of fus.matchPatterns) {
+          if (pattern.test(response.question)) {
+            return {
+              columns: fus.chartData.columns,
+              rows: fus.chartData.rows,
+              isEmpty: fus.chartData.rows.length === 0,
+            }
+          }
+        }
+      }
+    }
+
     const scenario = this.matchScenario(response.question)
 
     // Check if spec yFields match chart data columns

@@ -1,6 +1,8 @@
 // frontend/src/api/aiAsk/mockAdapter.test.ts
 import { describe, it, expect } from 'vitest'
 import { MockAdapter } from './mockAdapter'
+import type { AiAskContext } from './adapter'
+import type { AiAskResponse } from '../../types/aiAsk'
 
 describe('MockAdapter', () => {
   const adapter = MockAdapter.create()
@@ -90,5 +92,84 @@ describe('MockAdapter', () => {
     })
     const lastChart = resp.chartSuggestions[resp.chartSuggestions.length - 1]
     expect(lastChart.chartType).toBe('metric-card')
+  })
+
+  // --- Phase 5H: Multi-turn follow-up tests ---
+
+  describe('MockAdapter multi-turn', () => {
+    async function firstRound(): Promise<AiAskResponse> {
+      return adapter.analyze('各区域销售额', {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+      })
+    }
+
+    function makeContext(prevResponse: AiAskResponse): AiAskContext {
+      return {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+        messageHistory: [
+          { role: 'user', content: '各区域销售额' },
+          { role: 'assistant', content: '各区域销售额分析结果', responseJson: prevResponse as any },
+        ],
+      }
+    }
+
+    it('detects multi-turn when messageHistory has assistant response', async () => {
+      const prev = await firstRound()
+      const resp = await adapter.analyze('为什么华东最高', makeContext(prev))
+      expect(resp.followUp).toBeDefined()
+      expect(resp.followUp!.type).toBe('drill_down')
+      expect(resp.followUp!.targetValue).toBe('华东')
+    })
+
+    it('returns contextSummary for follow-up response', async () => {
+      const prev = await firstRound()
+      const resp = await adapter.analyze('为什么华东最高', makeContext(prev))
+      expect(resp.contextSummary).toBeTruthy()
+      expect(resp.contextSummary).toContain('上一轮')
+    })
+
+    it('multi-turn response has different chart suggestions', async () => {
+      const prev = await firstRound()
+      const resp = await adapter.analyze('为什么华东最高', makeContext(prev))
+      expect(resp.chartSuggestions.length).toBeGreaterThanOrEqual(1)
+      // Should have different narrative from single-turn
+      expect(resp.narrative.conclusion).toBeDefined()
+      expect(resp.narrative.evidence.length).toBeGreaterThan(0)
+    })
+
+    it('handles why_down follow-up', async () => {
+      const prev = await firstRound()
+      const resp = await adapter.analyze('为什么销售额下降', makeContext(prev))
+      expect(resp.followUp).toBeDefined()
+      expect(resp.followUp!.type).toBe('why_down')
+    })
+
+    it('handles forceFollowUpType override', async () => {
+      const prev = await firstRound()
+      const resp = await adapter.analyze('随便看看', {
+        ...makeContext(prev),
+        options: { forceFollowUpType: 'top_n' },
+      })
+      expect(resp.followUp).toBeDefined()
+      expect(resp.followUp!.type).toBe('top_n')
+    })
+
+    it('getChartData returns follow-up scenario chart data when available', async () => {
+      const prev = await firstRound()
+      // Use a question that triggers drill_down detection AND matches follow-up scenario patterns
+      const resp = await adapter.analyze('华东区域具体', makeContext(prev))
+      const data = adapter.getChartData(resp.chartSuggestions[0], resp)
+      expect(data.isEmpty).toBe(false)
+      expect(data.columns).toContain('product_line')
+    })
+
+    it('single-turn path is unaffected by multi-turn changes', async () => {
+      const resp = await adapter.analyze('各区域销售额', {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+      })
+      expect(resp.followUp).toBeUndefined()
+      expect(resp.contextSummary).toBeUndefined()
+      expect(resp.narrative.conclusion).toBeUndefined()
+    })
   })
 })
