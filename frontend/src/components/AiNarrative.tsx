@@ -11,6 +11,15 @@ interface AiNarrativeProps {
 }
 
 const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) => {
+  const renderRisk = (risk: string | AiInsightNarrative['risks'][number]): string => {
+    if (typeof risk === 'string') return risk
+    return risk.risk || '未知风险'
+  }
+
+  const renderQuestion = (q: string | AiInsightNarrative['nextQuestions'][number]): string => {
+    if (typeof q === 'string') return q
+    return q.question || '继续追问'
+  }
   return (
     <Card
       size="small"
@@ -80,7 +89,7 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
           <Text style={{ fontSize: 12, color: '#ad8b00' }}>⚠ 数据说明</Text>
           {narrative.risks.map((risk, i) => (
             <div key={i} style={{ fontSize: 12, color: '#8c6e00', marginTop: 2 }}>
-              • {risk}
+              • {renderRisk(risk)}
             </div>
           ))}
         </div>
@@ -96,7 +105,7 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
             {narrative.nextQuestions.map((q, i) => (
               <div
                 key={i}
-                onClick={() => onAskQuestion?.(q)}
+                onClick={() => onAskQuestion?.(renderQuestion(q))}
                 style={{
                   padding: '5px 12px',
                   borderRadius: 16,
@@ -114,7 +123,7 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
                   e.currentTarget.style.background = '#f0f5ff'
                 }}
               >
-                {q}
+                {renderQuestion(q)}
               </div>
             ))}
           </div>
