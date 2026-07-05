@@ -18,10 +18,10 @@ vi.mock('echarts/core', () => ({
   use: vi.fn(),
 }))
 
-const mockColumns = ['region', 'total_revenue', 'gross_margin']
+const mockColumns = ['region', 'total_revenue', 'gross_margin', 'month']
 const mockRows = [
-  ['华东', 12300000, 32.5],
-  ['华南', 9800000, 28.7],
+  ['华东', 12300000, 32.5, '2026-01'],
+  ['华南', 9800000, 28.7, '2026-01'],
 ]
 
 const barSpec: AiChartSpec = {
@@ -51,40 +51,75 @@ const pieSpec: AiChartSpec = {
   limitations: [],
 }
 
+const comboSpec: AiChartSpec = {
+  title: '组合图',
+  chartType: 'combo',
+  xField: 'region',
+  yFields: ['total_revenue', 'gross_margin'],
+  rationale: '',
+  limitations: [],
+}
+
+const multiBarSpec: AiChartSpec = {
+  title: '多指标',
+  chartType: 'bar',
+  xField: 'region',
+  yFields: ['total_revenue', 'gross_margin'],
+  rationale: '',
+  limitations: [],
+}
+
+const multiLineSpec: AiChartSpec = {
+  title: '多折线',
+  chartType: 'line',
+  xField: 'region',
+  yFields: ['total_revenue', 'gross_margin'],
+  rationale: '',
+  limitations: [],
+}
+
 describe('ChartCanvas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('renders chart container with bar spec', () => {
-    render(
-      <ChartCanvas spec={barSpec} columns={mockColumns} rows={mockRows} height={200} />
-    )
+    render(<ChartCanvas spec={barSpec} columns={mockColumns} rows={mockRows} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+    expect(mockSetOption).toHaveBeenCalled()
   })
 
   it('renders chart container with line spec', () => {
-    render(
-      <ChartCanvas spec={lineSpec} columns={mockColumns} rows={mockRows} height={200} />
-    )
+    render(<ChartCanvas spec={lineSpec} columns={mockColumns} rows={mockRows} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
   })
 
-  it('renders chart container with pie spec', () => {
-    render(
-      <ChartCanvas spec={pieSpec} columns={mockColumns} rows={mockRows} height={200} />
-    )
+  it('renders pie chart', () => {
+    render(<ChartCanvas spec={pieSpec} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+  })
+
+  it('renders combo chart', () => {
+    render(<ChartCanvas spec={comboSpec} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+  })
+
+  it('renders multi yField bar chart (grouped)', () => {
+    render(<ChartCanvas spec={multiBarSpec} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+  })
+
+  it('renders multi yField line chart', () => {
+    render(<ChartCanvas spec={multiLineSpec} columns={mockColumns} rows={mockRows} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
   })
 
   it('handles empty data gracefully', () => {
-    render(
-      <ChartCanvas spec={barSpec} columns={mockColumns} rows={[]} height={200} />
-    )
+    render(<ChartCanvas spec={barSpec} columns={mockColumns} rows={[]} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
   })
 
-  it('handles metric-card as fallback (no ECharts render)', () => {
+  it('handles metric-card type without error', () => {
     const metricSpec: AiChartSpec = {
       title: '指标卡',
       chartType: 'metric-card',
@@ -93,9 +128,49 @@ describe('ChartCanvas', () => {
       rationale: '',
       limitations: [],
     }
-    render(
-      <ChartCanvas spec={metricSpec} columns={mockColumns} rows={mockRows} height={200} />
-    )
+    render(<ChartCanvas spec={metricSpec} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+    // metric-card should not call setOption (clears instead)
+    expect(mockClear).toHaveBeenCalled()
+  })
+
+  it('renders combo with single yField as bar fallback', () => {
+    const singleFieldCombo: AiChartSpec = {
+      title: '单字段组合',
+      chartType: 'combo',
+      xField: 'region',
+      yFields: ['total_revenue'],
+      rationale: '',
+      limitations: [],
+    }
+    render(<ChartCanvas spec={singleFieldCombo} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+  })
+
+  it('handles table type without error', () => {
+    const tableSpec: AiChartSpec = {
+      title: '表格',
+      chartType: 'table',
+      yFields: [],
+      rationale: '',
+      limitations: [],
+    }
+    render(<ChartCanvas spec={tableSpec} columns={mockColumns} rows={mockRows} height={200} />)
+    expect(screen.getByTestId('chart-canvas')).toBeTruthy()
+    // table should not call setOption (clears instead)
+    expect(mockClear).toHaveBeenCalled()
+  })
+
+  it('handles unsupported chart type gracefully', () => {
+    const unsupportedSpec: AiChartSpec = {
+      title: '未知',
+      chartType: 'unknown' as any,
+      xField: 'region',
+      yFields: ['total_revenue'],
+      rationale: '',
+      limitations: [],
+    }
+    render(<ChartCanvas spec={unsupportedSpec} columns={mockColumns} rows={mockRows} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
   })
 })

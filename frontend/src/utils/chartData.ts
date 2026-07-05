@@ -84,3 +84,56 @@ export function aggregateChartData(input: ChartDataInput): AggregatedResult {
 
   return { categories, values, isEmpty: false, isTruncated }
 }
+
+export interface MultiYFieldInput {
+  xColumn: string
+  yFields: string[]
+  columns: string[]
+  rows: any[][]
+}
+
+export interface MultiYFieldResult {
+  categories: string[]
+  series: Array<{
+    name: string
+    values: number[]
+  }>
+  isEmpty: boolean
+}
+
+/**
+ * Aggregate data for multiple yFields.
+ * Each yField becomes a series with values grouped by xColumn.
+ */
+export function aggregateMultiYField(input: MultiYFieldInput): MultiYFieldResult {
+  const { xColumn, yFields, columns, rows } = input
+  const xIndex = columns.indexOf(xColumn)
+  if (xIndex === -1) return { categories: [], series: [], isEmpty: true }
+
+  const yIndices = yFields.map((f) => columns.indexOf(f)).filter((i) => i >= 0)
+  if (yIndices.length === 0) return { categories: [], series: [], isEmpty: true }
+
+  // Collect unique x values in order
+  const xValues = [...new Set(rows.map((r) => String(r[xIndex] ?? '')))]
+  const usedYFields = yFields.filter((_, i) => yIndices[i] >= 0)
+
+  const series = usedYFields.map((name, si) => {
+    const yi = yIndices[si]
+    const values = xValues.map((xv) => {
+      // Sum all rows matching this x value
+      const matchingRows = rows.filter((r) => String(r[xIndex] ?? '') === xv)
+      const total = matchingRows.reduce((sum, r) => {
+        const v = Number(r[yi])
+        return sum + (isNaN(v) ? 0 : v)
+      }, 0)
+      return total
+    })
+    return { name, values }
+  })
+
+  return {
+    categories: xValues,
+    series,
+    isEmpty: xValues.length === 0 || series.every((s) => s.values.every((v) => v === 0)),
+  }
+}

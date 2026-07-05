@@ -32,10 +32,10 @@ const AiChartBoard: React.FC<AiChartBoardProps> = ({
   }
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+    <div style={{ marginTop: 12, background: '#fafafa', borderRadius: 12, padding: '16px 16px 8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
         <BarChartOutlined style={{ color: '#4E7BF5', fontSize: 16 }} />
-        <Text strong style={{ fontSize: 13 }}>
+        <Text strong style={{ fontSize: 13, color: '#262626' }}>
           AI 图表建议
         </Text>
         <Text style={{ fontSize: 11, color: '#999' }}>
@@ -47,7 +47,9 @@ const AiChartBoard: React.FC<AiChartBoardProps> = ({
           display: 'flex',
           gap: 12,
           overflowX: 'auto',
-          paddingBottom: 8,
+          overflowY: 'hidden',
+          paddingBottom: 10,
+          scrollbarWidth: 'thin' as any,
         }}
       >
         {chartSuggestions.map((spec, index) => (

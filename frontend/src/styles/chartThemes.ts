@@ -38,3 +38,18 @@ export const DEFAULT_THEME: ChartTheme = 'business-light'
 export function getTheme(theme?: ChartTheme): ChartThemeConfig {
   return CHART_THEMES[theme ?? DEFAULT_THEME] ?? CHART_THEMES[DEFAULT_THEME]
 }
+
+/**
+ * Get series color with interval strategy to avoid adjacent color conflict.
+ * When series count > palette length, alternate by stepping index to maintain contrast.
+ */
+export function getSeriesColor(index: number, palette: string[]): string {
+  const len = palette.length
+  if (len === 0) return '#4E7BF5'
+  // Alternate stepping: for large series counts, use step of ~len/2 to maximize contrast
+  if (index >= len) {
+    const step = Math.max(1, Math.floor(len / 2))
+    return palette[(index * step) % len]
+  }
+  return palette[index]
+}
