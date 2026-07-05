@@ -5,11 +5,14 @@ export type Aggregation = 'sum' | 'avg' | 'count' | 'min' | 'max'
 export type ChartTheme = 'business-light' | 'executive-blue' | 'soft-gradient'
 export type GapReason = 'not_found' | 'ambiguous' | 'incomplete'
 
+export type MetricIcon = 'revenue' | 'orders' | 'customers' | 'profit' | 'rate'
+
 export interface MetricCard {
   label: string
   value: string
   change?: string | null
   changeDirection?: 'up' | 'down' | 'flat'
+  icon?: MetricIcon
 }
 
 export interface AiChartSpec {
