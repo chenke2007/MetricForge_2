@@ -13,11 +13,13 @@ import SqlPlan from '../components/SqlPlan'
 import AiChartBoard from '../components/AiChartBoard'
 import AiNarrative from '../components/AiNarrative'
 import SemanticGapAlert from '../components/SemanticGapAlert'
+import ContextChain from '../components/ContextChain'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
 import { useAiAskService, AiAskError, getAiAskErrorMessage } from '../api/aiAsk'
 import { formatCompact } from '../utils/numberFormat'
+import type { ProcessInsight, FollowUpQuestion, AiAskResponse } from '../types/aiAsk'
 
 const { Sider, Content } = Layout
 
@@ -59,6 +61,48 @@ const AskWorkbenchPage: React.FC = () => {
 
   const adapter = useAiAskService()
   const chartDataRef = useRef<{ columns: string[]; rows: any[][] } | null>(null)
+
+  // Phase 5H: Context tracking
+  const [contextChain, setContextChain] = React.useState<string[]>([])
+  const [processInsight, setProcessInsight] = React.useState<ProcessInsight | null>(null)
+  const [isFollowUpMode, setIsFollowUpMode] = React.useState(false)
+  const contextChainRef = useRef(contextChain)
+  contextChainRef.current = contextChain
+
+  const buildProcessInsight = useCallback((
+    response: AiAskResponse,
+    prevChain: string[],
+  ): ProcessInsight => {
+    const resp = response as any
+    return {
+      understoodMetrics: resp.intent.metrics,
+      understoodDimensions: resp.intent.dimensions,
+      understoodTimeRange: resp.intent.timeRange,
+      understoodFilters: resp.intent.filters,
+      semanticGaps: (resp.semanticGaps || []).map((g: any) => ({
+        field: g.field,
+        candidates: g.candidates,
+        severity: g.reason === 'not_found' ? 'high' as const : 'medium' as const,
+      })),
+      analysisStrategy: resp.followUp
+        ? `基于上一轮 "${prevChain[prevChain.length - 1] ?? ''}" 的结果，${getFollowUpStrategyLabel(resp.followUp.type)}`
+        : '按维度分组汇总，基于规则推荐图表',
+      contextChain: [...prevChain, resp.question],
+    }
+  }, [])
+
+  function getFollowUpStrategyLabel(type: string): string {
+    const labels: Record<string, string> = {
+      drill_down: '下钻分析',
+      why_down: '归因分析',
+      time_shift: '时间维切换',
+      top_n: '排名分析',
+      switch_metric: '指标切换',
+      explain_anomaly: '异常解读',
+      general_followup: '深入分析',
+    }
+    return labels[type] || '深入分析'
+  }
 
   const handleSend = useCallback(async (content: string) => {
     let sessionId = currentSessionId
@@ -116,6 +160,23 @@ const AskWorkbenchPage: React.FC = () => {
 
       setCurrentResponse(resp as any)
       setAnalyzing(false)
+
+      // Phase 5H: Update context chain and process insight
+      const followUp = (resp as any).followUp as FollowUpQuestion | undefined
+      const currentChain = contextChainRef.current
+      const newChain = followUp
+        ? [...currentChain, resp.question]
+        : [resp.question]
+
+      setContextChain(newChain)
+      setIsFollowUpMode(!!followUp)
+
+      const insight = buildProcessInsight(resp as any, currentChain)
+      setProcessInsight(insight)
+
+      // Store in responseHistory
+      const msgId = Date.now()
+      useAiAskStore.getState().saveResponseForMessage(msgId, resp as any)
     } catch (err) {
       setAnalyzing(false)
       if (err instanceof AiAskError) {
@@ -411,9 +472,49 @@ const AskWorkbenchPage: React.FC = () => {
               {/* AI result cards */}
               {currentResponse && !isAnalyzing && (
                 <div>
+                  {/* Phase 5H: Follow-up context indicator */}
+                  {isFollowUpMode && (
+                    <div style={{
+                      marginBottom: 12, padding: '6px 12px', background: '#f0f5ff',
+                      borderRadius: 6, border: '1px solid #d9e8ff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12 }}>📎</span>
+                        <Typography.Text style={{ fontSize: 12, color: '#4E7BF5' }}>基于上一轮继续分析</Typography.Text>
+                        {contextChain.length >= 2 && (
+                          <Typography.Text style={{ fontSize: 11, color: '#999' }}>
+                            上一轮：{contextChain[contextChain.length - 2]}
+                          </Typography.Text>
+                        )}
+                      </div>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<ClearOutlined />}
+                        onClick={() => {
+                          setIsFollowUpMode(false)
+                          setContextChain([])
+                          setProcessInsight(null)
+                        }}
+                        style={{ fontSize: 12, color: '#999' }}
+                      >
+                        新会话
+                      </Button>
+                    </div>
+                  )}
+
+                  {contextChain.length > 1 && (
+                    <ContextChain
+                      contextChain={contextChain}
+                      currentIndex={contextChain.length - 1}
+                    />
+                  )}
+
                   <IntentCard
                     intent={currentResponse.intent}
                     semanticGaps={currentResponse.semanticGaps}
+                    processInsight={processInsight ?? undefined}
                   />
 
                   {currentResponse.semanticGaps.filter(

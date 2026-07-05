@@ -142,6 +142,10 @@ vi.mock('../components/AiNarrative', () => ({
   default: () => <div data-testid="ai-narrative">AiNarrative</div>,
 }))
 
+vi.mock('../components/ContextChain', () => ({
+  default: () => <div data-testid="context-chain">ContextChain</div>,
+}))
+
 vi.mock('../components/SemanticGapAlert', () => ({
   default: () => <div data-testid="semantic-gap-alert">SemanticGapAlert</div>,
 }))

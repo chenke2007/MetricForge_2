@@ -1,84 +1,79 @@
-# Task 6: 前端 AI 问数工作台实施报告
+# Task 6: Page Integration — IntentCard + AskWorkbenchPage 集成
 
-## 1. 实施内容
+**日期:** 2026-07-05
+**Branch:** main
+**Commit:** 768530c
 
-实现了 AI 问数工作台的完整数据层、组件层和页面层，共创建 11 个文件，修改 3 个文件。
+---
 
-### 创建的文件
+## 执行概要
 
-| 文件 | 说明 |
+完成 Phase 5H Task 6：将 ContextChain + ProcessPanel 集成到 IntentCard 和 AskWorkbenchPage，实现追问上下文追踪和多轮对话 UI 交互。
+
+## 修改文件
+
+| 文件 | 变更 | 说明 |
+|------|------|------|
+| [IntentCard.tsx](../../frontend/src/components/IntentCard.tsx) | 修改 | 添加 `processInsight` optional prop + `ProcessPanel` 集成 |
+| [IntentCard.test.tsx](../../frontend/src/components/IntentCard.test.tsx) | 修改 | 添加 2 个 ProcessPanel 集成测试 |
+| [AskWorkbenchPage.tsx](../../frontend/src/pages/AskWorkbenchPage.tsx) | 修改 | 添加 context tracking、follow-up indicator bar、"新会话"按钮、ContextChain 渲染 |
+| [AskWorkbenchPage.test.tsx](../../frontend/src/pages/AskWorkbenchPage.test.tsx) | 修改 | Mock ContextChain 组件，确保 9 个测试全部通过 |
+
+## 实现细节
+
+### IntentCard.tsx
+- 添加 `processInsight?: ProcessInsight` optional prop
+- 在 semantic gaps 部分后插入 `{processInsight && <ProcessPanel process={processInsight} />}`
+- 向后兼容：不传 `processInsight` 时无任何 UI 变化
+
+### AskWorkbenchPage.tsx
+- **Context tracking state**: `contextChain`, `processInsight`, `isFollowUpMode` + `contextChainRef`（useRef 避免 stale closure）
+- **buildProcessInsight()**: 从 response + prevChain 构建 `ProcessInsight` 对象
+- **getFollowUpStrategyLabel()**: FollowUpType → 中文分析策略标签映射
+- **handleSend 中的 context 更新**: 检测 `followUp` 字段，构建新 context chain，存入 responseHistory
+- **Follow-up indicator bar**: 蓝色指示条显示"基于上一轮继续分析" + 上一轮问题摘要 + "新会话"按钮
+- **ContextChain**: 当 `contextChain.length > 1` 时渲染
+- **IntentCard**: 传入 `processInsight`
+
+### IntentCard.test.tsx (新增 2 个测试)
+1. ✅ renders AI 理解过程 toggle when processInsight provided
+2. ✅ does not render AI 理解过程 when processInsight is undefined
+
+### AskWorkbenchPage.test.tsx
+- Mock ContextChain 组件
+
+## 验证结果
+
+### 测试（4 个文件，28 个测试全部通过）
+```
+ ✓ src/components/ContextChain.test.tsx (4 tests)
+ ✓ src/components/ProcessPanel.test.tsx (6 tests)
+ ✓ src/components/IntentCard.test.tsx (9 tests)
+ ✓ src/pages/AskWorkbenchPage.test.tsx (9 tests)
+```
+
+### TypeScript (`npx tsc --noEmit`)
+```
+通过 — 无类型错误
+```
+
+## 约束检查
+
+| 约束 | 状态 |
 |------|------|
-| `frontend/src/stores/askStore.ts` | Zustand 流式状态管理 (currentSessionId, streaming state) |
-| `frontend/src/api/askSessions.ts` | TanStack Query hooks: sessions CRUD, messages, mutations |
-| `frontend/src/components/SessionList.tsx` | 左侧对话列表，支持新建/删除/选中高亮 |
-| `frontend/src/components/AskInput.tsx` | 底部输入区域，flex 布局，支持 Enter/Shift+Enter |
-| `frontend/src/components/MarkdownRenderer.tsx` | react-markdown + remark-gfm 渲染，SQL 代码块转发 |
-| `frontend/src/components/SqlCodeBlock.tsx` | 深色主题 SQL 代码块，一键复制按钮 |
-| `frontend/src/components/UserMessage.tsx` | 用户消息气泡（右对齐，蓝色背景） |
-| `frontend/src/components/AssistantMessage.tsx` | AI 助手消息气泡（左对齐，灰色背景，Markdown 渲染） |
-| `frontend/src/components/StreamingMessage.tsx` | 流式消息占位，带闪烁光标 |
-| `frontend/src/components/MessageThread.tsx` | 消息列表容器，空状态指引，自动滚动到底部 |
-| `frontend/src/pages/AskWorkbenchPage.tsx` | 主页面：左侧 Sider(会话列表) + Content(消息区+输入框) |
+| 不硬编码 dwhrpt | ✅ 无新增 hardcoded dwhrpt |
+| 单轮问数路径不回归 | ✅ context chain 仅在有 followUp 时追加 |
+| SQL Workbench 不改核心逻辑 | ✅ 仅传递下游验证 |
+| 不新增后端 API/DB/migration | ✅ |
+| 不接真实 LLM | ✅ |
+| 不引入 Playwright/Cypress | ✅ |
+| 不处理 Phase 4 untracked docs | ✅ |
 
-### 修改的文件
+## 自检清单
 
-| 文件 | 变更 |
-|------|------|
-| `frontend/src/App.tsx` | 添加 `import AskWorkbenchPage` 和 `/ask` 路由 |
-| `frontend/src/components/Layout.tsx` | 添加 `RobotOutlined` 图标和 `AI 问数` 菜单项 |
-| `frontend/src/styles/global.css` | 添加 `@keyframes blink` 动画 |
-
-## 2. 依赖安装
-
-```bash
-npm install zustand react-markdown remark-gfm react-syntax-highlighter
-```
-
-所有依赖已成功安装到 `node_modules`。
-
-## 3. 与 Brief 的偏差
-
-1. **SSE 解析修正** (brief 原文第 1 条): 按用户修正实现，使用 event type 累积变量 `currentEvent`，在 `data:` 行解析时根据 `currentEvent` 值区分 `token`/`error`/`done` 事件，而非按行前缀匹配。
-
-2. **AskInput 布局修正** (brief 原文第 2 条): 不使用 `Space.Compact`，改为 flex 容器 `display: flex; gap: 8`。
-
-3. **StreamingMessage 光标** (brief 原文第 3 条): `@keyframes blink` 定义在 `global.css` 中，组件内通过 `style={{ animation: 'blink 1s step-end infinite' }}` 引用。
-
-4. **createSession.mutate(undefined) 的类型问题**: `useMutation` 的 `mutationFn` 期望 `CreateSessionInput` 参数，`undefined` 不可赋值。改为 `mutate({} as any)` 避免 TS 错误。
-
-5. **MessageThread.isLoading 未使用**: TypeScript `noUnusedLocals`/`noUnusedParameters` 规则要求未使用参数加 `_` 前缀。改为 `_isLoading` 保留接口兼容性。
-
-6. **Layout.tsx 菜单项**: Brief 未要求但需要添加 `AI 问数` 菜单项才能从侧栏导航到 `/ask`。已添加 `RobotOutlined` 图标。
-
-## 4. 构建验证
-
-### TypeScript 类型检查
-```
-> npx tsc --noEmit
-通过，无错误
-```
-
-### Vite 生产构建
-```
-> npx vite build
-✓ 3353 modules transformed.
-✓ built in 18.45s
-
-dist/index.html                  0.42 kB │ gzip: 0.33 kB
-dist/assets/index-C3hJj4lV.css  0.20 kB │ gzip: 0.18 kB
-dist/assets/index-Ljvu-UzG.js   1,201.24 kB │ gzip: 378.50 kB
-```
-
-构建成功。JS 包体积较大（1.2MB) 主要来自 react-markdown + react-syntax-highlighter 依赖。`noUnusedLocals`/`noUnusedParameters` 规则已满足。
-
-## 5. 自审发现
-
-1. **包体积**: `react-syntax-highlighter` 体积较大，后续可考虑使用轻量语法高亮方案或通过 `manualChunks` 拆分。
-2. **SSE 错误处理**: 当前 `event: error` 事件仅忽略处理，未在 UI 上展示流式错误信息。可后续增强。
-3. **空状态**: `MessageThread` 和 `AskWorkbenchPage` 均有空状态引导文本，体验完整。
-4. **路由匹配**: `/ask` 路径已添加到 Layout 和 App.tsx，侧栏菜单项高亮通过 `location.pathname` 自动匹配。
-5. **代码质量**: 无 TypeScript 错误，所有组件 Props 接口定义完整，函数组件使用 `React.FC` 类型标注。
-
-## 6. 状态
-
-DONE — 所有文件创建、修改、类型检查和构建验证均通过。
+- [x] 所有新增 optional 字段向后兼容
+- [x] context chain 使用 useRef 避免 stale closure
+- [x] "新会话"按钮仅清除本地 context 状态
+- [x] 没有修改 store / 后端
+- [x] ProcessPanel 默认折叠
+- [x] ContextChain 空输入返回 null
