@@ -1,9 +1,63 @@
 import React from 'react'
 import { Card, Typography } from 'antd'
 import { CommentOutlined } from '@ant-design/icons'
-import type { AiInsightNarrative } from '../types/aiAsk'
+import type { AiInsightNarrative, RiskItem, NextQuestion } from '../types/aiAsk'
 
 const { Text } = Typography
+
+const FOLLOWUP_TYPE_LABELS: Record<string, string> = {
+  why_down: '🔍',
+  drill_down: '🔽',
+  switch_metric: '🔄',
+  top_n: '🏆',
+  explain_anomaly: '⚡',
+  time_shift: '📅',
+  general_followup: '💬',
+}
+
+function renderRiskItem(r: string | RiskItem, i: number) {
+  if (typeof r === 'string') {
+    return <div key={i} style={{ fontSize: 12, color: '#8c6e00', marginTop: 2 }}>• {r}</div>
+  }
+  return (
+    <div key={i} style={{ fontSize: 12, color: '#8c6e00', marginTop: 2 }}>
+      • {r.risk}
+      {r.impact && <span style={{ color: '#ad8b00' }}> → {r.impact}</span>}
+      {r.suggestion && (
+        <span style={{ display: 'block', paddingLeft: 12, color: '#666' }}>
+          建议：{r.suggestion}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function renderNextQuestion(q: string | NextQuestion, i: number, onAsk?: (q: string) => void) {
+  const text = typeof q === 'string' ? q : q.question
+  const prefix = (typeof q !== 'string' && q.followUpType && FOLLOWUP_TYPE_LABELS[q.followUpType])
+    ? FOLLOWUP_TYPE_LABELS[q.followUpType] + ' ' : ''
+
+  return (
+    <div
+      key={i}
+      onClick={() => onAsk?.(text)}
+      style={{
+        padding: '5px 12px',
+        borderRadius: 16,
+        border: '1px solid #d9e8ff',
+        background: '#f0f5ff',
+        fontSize: 12,
+        color: '#4E7BF5',
+        cursor: onAsk ? 'pointer' : 'default',
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#d9e8ff' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '#f0f5ff' }}
+    >
+      {prefix}{text}
+    </div>
+  )
+}
 
 interface AiNarrativeProps {
   narrative: AiInsightNarrative
@@ -11,15 +65,11 @@ interface AiNarrativeProps {
 }
 
 const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) => {
-  const renderRisk = (risk: string | AiInsightNarrative['risks'][number]): string => {
-    if (typeof risk === 'string') return risk
-    return risk.risk || '未知风险'
-  }
+  const hasConclusion = narrative.conclusion && narrative.conclusion.length > 0
+  const hasEvidence = narrative.evidence && narrative.evidence.length > 0
+  const hasRisks = narrative.risks && narrative.risks.length > 0
+  const hasNextQuestions = narrative.nextQuestions && narrative.nextQuestions.length > 0
 
-  const renderQuestion = (q: string | AiInsightNarrative['nextQuestions'][number]): string => {
-    if (typeof q === 'string') return q
-    return q.question || '继续追问'
-  }
   return (
     <Card
       size="small"
@@ -34,6 +84,27 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         <CommentOutlined style={{ color: '#52c41a', fontSize: 16 }} />
         <Text strong style={{ fontSize: 13 }}>AI 解读</Text>
       </div>
+
+      {/* Conclusion (Phase 5H) */}
+      {hasConclusion && (
+        <div
+          style={{
+            fontSize: 14,
+            lineHeight: 1.7,
+            color: '#333',
+            marginBottom: 12,
+            background: '#f0f5ff',
+            padding: '10px 14px',
+            borderRadius: 6,
+            borderLeft: '3px solid #4E7BF5',
+          }}
+        >
+          <Text strong style={{ fontSize: 12, color: '#4E7BF5', display: 'block', marginBottom: 4 }}>
+            结论
+          </Text>
+          {narrative.conclusion}
+        </div>
+      )}
 
       {/* 总结 */}
       <div
@@ -75,8 +146,47 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         </div>
       )}
 
+      {/* Evidence (Phase 5H enhanced) */}
+      {hasEvidence && (
+        <div style={{ marginBottom: 12 }}>
+          <Text strong style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
+            证据
+          </Text>
+          {narrative.evidence.map((e, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 13,
+                color: '#444',
+                padding: '4px 0 4px 16px',
+                lineHeight: 1.6,
+              }}
+            >
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: -14, color: '#52c41a' }}>•</span>
+                <span>{e.claim}</span>
+                {(e.value || e.significance) && (
+                  <span style={{ color: '#666', fontSize: 12 }}>
+                    {' — '}
+                    {e.value && <span>{e.value}</span>}
+                    {e.value && e.significance && <span> · </span>}
+                    {e.significance && <span>{e.significance}</span>}
+                  </span>
+                )}
+              </div>
+              {e.fields.length > 0 && (
+                <div style={{ fontSize: 11, color: '#999', marginTop: 2, paddingLeft: 0 }}>
+                  → 来源字段：{e.fields.join(', ')}
+                  {e.sqlSnippet && <span> · SQL: {e.sqlSnippet}</span>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 数据说明/风险 */}
-      {narrative.risks.length > 0 && (
+      {hasRisks && (
         <div
           style={{
             marginBottom: 12,
@@ -87,45 +197,18 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
           }}
         >
           <Text style={{ fontSize: 12, color: '#ad8b00' }}>⚠ 数据说明</Text>
-          {narrative.risks.map((risk, i) => (
-            <div key={i} style={{ fontSize: 12, color: '#8c6e00', marginTop: 2 }}>
-              • {renderRisk(risk)}
-            </div>
-          ))}
+          {narrative.risks.map((r, i) => renderRiskItem(r, i))}
         </div>
       )}
 
       {/* 追问建议 */}
-      {narrative.nextQuestions.length > 0 && (
+      {hasNextQuestions && (
         <div>
           <Text strong style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
             后续可以追问
           </Text>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {narrative.nextQuestions.map((q, i) => (
-              <div
-                key={i}
-                onClick={() => onAskQuestion?.(renderQuestion(q))}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: 16,
-                  border: '1px solid #d9e8ff',
-                  background: '#f0f5ff',
-                  fontSize: 12,
-                  color: '#4E7BF5',
-                  cursor: onAskQuestion ? 'pointer' : 'default',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#d9e8ff'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f0f5ff'
-                }}
-              >
-                {renderQuestion(q)}
-              </div>
-            ))}
+            {narrative.nextQuestions.map((q, i) => renderNextQuestion(q, i, onAskQuestion))}
           </div>
         </div>
       )}
