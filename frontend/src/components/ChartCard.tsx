@@ -1,10 +1,21 @@
 import React from 'react'
 import { Card, Typography, Tag, Space } from 'antd'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import {
+  InfoCircleOutlined, DollarOutlined, ShoppingCartOutlined,
+  UserOutlined, RiseOutlined, PercentageOutlined,
+} from '@ant-design/icons'
 import ChartCanvas from './ChartCanvas'
-import type { AiChartSpec } from '../types/aiAsk'
+import type { AiChartSpec, MetricIcon } from '../types/aiAsk'
 
 const { Text, Paragraph } = Typography
+
+const METRIC_ICON_MAP: Record<MetricIcon, React.ReactNode> = {
+  revenue: <DollarOutlined />,
+  orders: <ShoppingCartOutlined />,
+  customers: <UserOutlined />,
+  profit: <RiseOutlined />,
+  rate: <PercentageOutlined />,
+}
 
 interface ChartCardProps {
   spec: AiChartSpec
@@ -60,14 +71,14 @@ const ChartCard: React.FC<ChartCardProps> = ({
         )}
       </div>
 
-      {/* 指标卡（metric-card）行内渲染 */}
+      {/* 指标卡（metric-card）行内渲染 — 5G 增强：图标 + 渐变背景 + hover 动效 */}
       {spec.chartType === 'metric-card' && spec.metricCards && spec.metricCards.length > 0 && (
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${Math.min(spec.metricCards.length, 3)}, 1fr)`,
-            gap: 8,
-            padding: '8px 0',
+            gap: 10,
+            padding: '12px 0',
           }}
         >
           {spec.metricCards.map((mc, i) => (
@@ -75,28 +86,52 @@ const ChartCard: React.FC<ChartCardProps> = ({
               key={i}
               style={{
                 textAlign: 'center',
-                padding: '8px 4px',
-                background: '#f9fafb',
-                borderRadius: 8,
+                padding: '12px 8px 10px',
+                background: i === 0
+                  ? 'linear-gradient(135deg, #f0f5ff, #e6f7ff)'
+                  : i === 1
+                    ? 'linear-gradient(135deg, #f6fff0, #f0f5ff)'
+                    : '#f9fafb',
+                borderRadius: 10,
+                transition: 'all 0.2s ease',
+                cursor: 'default',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.02)'
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)'
+                e.currentTarget.style.boxShadow = 'none'
               }}
             >
-              <Text style={{ fontSize: 11, color: '#999', display: 'block' }}>{mc.label}</Text>
-              <Text strong style={{ fontSize: 18, color: '#333', display: 'block', marginTop: 2 }}>
+              {/* Icon + Label */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
+                {mc.icon && METRIC_ICON_MAP[mc.icon] && (
+                  <span style={{ fontSize: 14, color: '#4E7BF5' }}>
+                    {METRIC_ICON_MAP[mc.icon]}
+                  </span>
+                )}
+                <Text style={{ fontSize: 11, color: '#8c8c8c' }}>{mc.label}</Text>
+              </div>
+              {/* Value */}
+              <Text strong style={{ fontSize: 20, color: '#262626', display: 'block', lineHeight: 1.3 }}>
                 {mc.value}
               </Text>
+              {/* Change indicator */}
               {mc.change && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    color:
-                      mc.changeDirection === 'up'
-                        ? '#52c41a'
-                        : mc.changeDirection === 'down'
-                          ? '#ff4d4f'
-                          : '#999',
-                  }}
-                >
-                  {mc.changeDirection === 'up' ? '↑' : mc.changeDirection === 'down' ? '↓' : '→'}{' '}
+                <span style={{
+                  fontSize: 11,
+                  color: mc.changeDirection === 'up' ? '#52c41a'
+                    : mc.changeDirection === 'down' ? '#ff4d4f' : '#8c8c8c',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  marginTop: 2,
+                }}>
+                  <span style={{ fontSize: 12, lineHeight: 1 }}>
+                    {mc.changeDirection === 'up' ? '↑' : mc.changeDirection === 'down' ? '↓' : '→'}
+                  </span>
                   {mc.change}
                 </span>
               )}

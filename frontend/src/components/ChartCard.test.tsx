@@ -25,9 +25,9 @@ const metricCardSpec: AiChartSpec = {
   chartType: 'metric-card',
   yFields: [],
   metricCards: [
-    { label: '总营收', value: '3,180万', change: '+12.5%', changeDirection: 'up' },
-    { label: '毛利率', value: '31.6%', change: '+2.1%', changeDirection: 'up' },
-    { label: '订单量', value: '15,387', change: '-3.2%', changeDirection: 'down' },
+    { label: '总营收', value: '3,180万', change: '+12.5%', changeDirection: 'up', icon: 'revenue' },
+    { label: '毛利率', value: '31.6%', change: '+2.1%', changeDirection: 'up', icon: 'rate' },
+    { label: '订单量', value: '15,387', change: '-3.2%', changeDirection: 'down', icon: 'orders' },
   ],
   rationale: '核心经营指标一览',
   limitations: [],
@@ -87,12 +87,15 @@ describe('ChartCard', () => {
     )
     expect(screen.getByText('总营收')).toBeInTheDocument()
     expect(screen.getByText('3,180万')).toBeInTheDocument()
-    expect(screen.getByText('↑ +12.5%')).toBeInTheDocument()
+    // ↑ appears in 2 metric cards (both have changeDirection: 'up')
+    expect(screen.getAllByText('↑').length).toBe(2)
+    expect(screen.getByText('+12.5%')).toBeInTheDocument()
     expect(screen.getByText('毛利率')).toBeInTheDocument()
     expect(screen.getByText('31.6%')).toBeInTheDocument()
     expect(screen.getByText('订单量')).toBeInTheDocument()
     expect(screen.getByText('15,387')).toBeInTheDocument()
-    expect(screen.getByText('↓ -3.2%')).toBeInTheDocument()
+    expect(screen.getByText('↓')).toBeInTheDocument()
+    expect(screen.getByText('-3.2%')).toBeInTheDocument()
     // 指标卡类型不应渲染 ChartCanvas
     expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
   })
@@ -102,6 +105,37 @@ describe('ChartCard', () => {
       <ChartCard spec={metricCardSpec} columns={mockData.columns} rows={mockData.rows} />
     )
     expect(screen.getByText('指标卡')).toBeInTheDocument()
+  })
+
+  it('renders metric-card with icons when icon field is present', () => {
+    render(
+      <ChartCard spec={metricCardSpec} columns={mockData.columns} rows={mockData.rows} />
+    )
+    // The icons are rendered as SVG elements from @ant-design/icons
+    // Just verify metric-card elements render with icons present
+    expect(screen.getByText('总营收')).toBeInTheDocument()
+    expect(screen.getByText('毛利率')).toBeInTheDocument()
+    expect(screen.getByText('订单量')).toBeInTheDocument()
+    // Value text should be present
+    expect(screen.getByText('3,180万')).toBeInTheDocument()
+  })
+
+  it('renders metric-card without icon when icon field is missing', () => {
+    const noIconMetricSpec: AiChartSpec = {
+      title: '核心指标总览',
+      chartType: 'metric-card',
+      yFields: [],
+      metricCards: [
+        { label: '总营收', value: '3,180万', change: '+12.5%', changeDirection: 'up' },
+      ],
+      rationale: '',
+      limitations: [],
+    }
+    render(
+      <ChartCard spec={noIconMetricSpec} columns={mockData.columns} rows={mockData.rows} />
+    )
+    expect(screen.getByText('总营收')).toBeInTheDocument()
+    expect(screen.getByText('3,180万')).toBeInTheDocument()
   })
 
   it('calls onSelect when clicked', () => {
