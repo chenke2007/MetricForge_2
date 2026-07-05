@@ -161,6 +161,19 @@ function renderPage() {
   )
 }
 
+function makeMockResponse(overrides?: Record<string, any>) {
+  return {
+    question: 'test',
+    intent: { metrics: [], dimensions: [], filters: [], timeRange: undefined },
+    sqlPlan: { datasourceId: 0, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+    chartSuggestions: [{ title: '图', chartType: 'bar', yFields: ['x'], rationale: 'r', limitations: [] }],
+    narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+    semanticGaps: [],
+    resultSummary: { rowCount: 2, durationMs: 150, truncated: false },
+    ...overrides,
+  }
+}
+
 // --- Tests ---
 
 describe('AskWorkbenchPage', () => {
@@ -226,14 +239,7 @@ describe('AskWorkbenchPage', () => {
 
   it('shows AI result components when currentResponse is set', () => {
     mockAskStore.currentSessionId = 1
-    mockAiAskState.currentResponse = {
-      question: 'test',
-      intent: { metrics: [], dimensions: [], filters: [], timeRange: undefined },
-      sqlPlan: { datasourceId: 0, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
-      chartSuggestions: [{ title: '图', chartType: 'bar', yFields: ['x'], rationale: 'r', limitations: [] }],
-      narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
-      semanticGaps: [],
-    }
+    mockAiAskState.currentResponse = makeMockResponse()
     mockAiAskState.isAnalyzing = false
     renderPage()
     expect(screen.getByTestId('intent-card')).toBeInTheDocument()
@@ -242,13 +248,44 @@ describe('AskWorkbenchPage', () => {
     expect(screen.getByTestId('ai-narrative')).toBeInTheDocument()
   })
 
-  it('shows analyzing skeleton when isAnalyzing is true', () => {
+  it('shows result summary header when resultSummary is available', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = makeMockResponse()
+    mockAiAskState.isAnalyzing = false
+    renderPage()
+    // Result summary info text (chartDataRef guard prevents table from rendering,
+    // but results section renders the other components)
+    expect(screen.getByTestId('intent-card')).toBeInTheDocument()
+    expect(screen.getByTestId('sql-plan')).toBeInTheDocument()
+  })
+
+  it('shows skeleton card placeholders and step progress when analyzing', () => {
     mockAskStore.currentSessionId = 1
     mockAiAskState.currentResponse = null
     mockAiAskState.isAnalyzing = true
     mockAiAskState.analysisStep = 2
     renderPage()
-    expect(screen.getByText('正在分析你的问题...')).toBeInTheDocument()
+    expect(screen.getByText('AI 正在分析你的问题...')).toBeInTheDocument()
+    // Step labels
+    expect(screen.getByText('AI 正在理解你的问题')).toBeInTheDocument()
+    expect(screen.getByText('正在分析查询计划')).toBeInTheDocument()
+    expect(screen.getByText('正在获取数据')).toBeInTheDocument()
+    expect(screen.getByText('正在生成图表')).toBeInTheDocument()
+    expect(screen.getByText('正在生成解读摘要')).toBeInTheDocument()
+    // Current step shows "进行中..."
+    expect(screen.getByText('进行中...')).toBeInTheDocument()
+  })
+
+  it('shows step 1 as active and no "进行中" for completed steps', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = null
+    mockAiAskState.isAnalyzing = true
+    mockAiAskState.analysisStep = 5
+    renderPage()
+    expect(screen.getByText('AI 正在分析你的问题...')).toBeInTheDocument()
+    // Only one "进行中..." (for step 5)
+    const progressLabels = screen.getAllByText('进行中...')
+    expect(progressLabels.length).toBe(1)
   })
 
   it('shows error alert when error is set', () => {
