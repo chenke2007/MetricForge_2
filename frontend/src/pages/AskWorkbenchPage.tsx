@@ -17,7 +17,7 @@ import ContextChain from '../components/ContextChain'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
-import { useAiAskService, AiAskError, getAiAskErrorMessage } from '../api/aiAsk'
+import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput } from '../api/aiAsk'
 import { formatCompact } from '../utils/numberFormat'
 import type { ProcessInsight, FollowUpQuestion, AiAskResponse } from '../types/aiAsk'
 
@@ -105,6 +105,13 @@ const AskWorkbenchPage: React.FC = () => {
   }
 
   const handleSend = useCallback(async (content: string) => {
+    // Phase 5I: Input Guard final blocking layer
+    const validation = validateAiAskInput(content)
+    if (!validation.valid) {
+      message.error(validation.error.message)
+      return
+    }
+
     let sessionId = currentSessionId
     if (!sessionId) {
       try {

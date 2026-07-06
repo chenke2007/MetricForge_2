@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { message } from 'antd'
 import AskWorkbenchPage from './AskWorkbenchPage'
 
 const { mockedAnalyze } = vi.hoisted(() => ({
@@ -82,27 +83,31 @@ vi.mock('../api/askSessions', () => ({
   })),
 }))
 
-vi.mock('../api/aiAsk', () => ({
-  useAiAskService: vi.fn(() => ({
-    name: 'MockAdapter',
-    analyze: mockedAnalyze,
-    getChartData: vi.fn(() => ({ columns: ['region', 'revenue'], rows: [['华东', 1000]], isEmpty: false })),
-    isAvailable: vi.fn(() => true),
-    validate: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
-  })),
-  AiAskError: class extends Error {
-    code: string
-    constructor(m: string, code: string) {
-      super(m)
-      this.code = code
-      this.name = 'AiAskError'
-    }
-  },
-  getAiAskErrorMessage: vi.fn((code: string) => {
-    const map: Record<string, string> = { UNKNOWN: '分析异常', ANALYSIS_TIMEOUT: '分析超时' }
-    return map[code] || '异常'
-  }),
-}))
+vi.mock('../api/aiAsk', async () => {
+  const inputGuard = await vi.importActual('../api/aiAsk/inputGuard')
+  return {
+    validateAiAskInput: (inputGuard as any).validateAiAskInput,
+    useAiAskService: vi.fn(() => ({
+      name: 'MockAdapter',
+      analyze: mockedAnalyze,
+      getChartData: vi.fn(() => ({ columns: ['region', 'revenue'], rows: [['华东', 1000]], isEmpty: false })),
+      isAvailable: vi.fn(() => true),
+      validate: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
+    })),
+    AiAskError: class extends Error {
+      code: string
+      constructor(m: string, code: string) {
+        super(m)
+        this.code = code
+        this.name = 'AiAskError'
+      }
+    },
+    getAiAskErrorMessage: vi.fn((code: string) => {
+      const map: Record<string, string> = { UNKNOWN: '分析异常', ANALYSIS_TIMEOUT: '分析超时' }
+      return map[code] || '异常'
+    }),
+  }
+})
 
 vi.mock('../components/SessionList', () => ({
   default: () => <div data-testid="session-list">SessionList</div>,
@@ -135,11 +140,20 @@ vi.mock('../components/AskInput', () => ({
       <button
         data-testid="mock-send-btn"
         onClick={() => {
-          if (!loading) onSend?.('follow-up question about 华东')
+          if (!loading) onSend?.('近 7 天销量')
         }}
         type="button"
       >
         Send
+      </button>
+      <button
+        data-testid="mock-send-invalid-btn"
+        onClick={() => {
+          if (!loading) onSend?.('，，！')
+        }}
+        type="button"
+      >
+        Send Invalid
       </button>
     </div>
   ),
@@ -360,5 +374,33 @@ describe('AskWorkbenchPage', () => {
     mockAiAskState.error = { code: 'ANALYSIS_TIMEOUT', message: '超时', name: 'AiAskError' }
     renderPage()
     expect(screen.getByText('分析异常')).toBeInTheDocument()
+  })
+
+  it('blocks invalid input and does not call adapter.analyze', async () => {
+    mockAskStore.currentSessionId = 1
+    mockedAnalyze.mockResolvedValue(makeMockResponse())
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => {})
+
+    renderPage()
+    fireEvent.click(screen.getByTestId('mock-send-invalid-btn'))
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith('请输入有效的问题，不能仅包含标点或符号')
+    })
+    expect(mockedAnalyze).not.toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
+
+  it('allows normal business question and calls adapter.analyze', async () => {
+    mockAskStore.currentSessionId = 1
+    mockedAnalyze.mockResolvedValue(makeMockResponse({ question: '近 7 天销量' }))
+
+    renderPage()
+    fireEvent.click(screen.getByTestId('mock-send-btn'))
+
+    await waitFor(() => {
+      expect(mockedAnalyze).toHaveBeenCalledWith('近 7 天销量', expect.any(Object))
+    })
   })
 })

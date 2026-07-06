@@ -1,8 +1,11 @@
+// frontend/src/components/AskInput.tsx
 import React, { useState, useEffect } from 'react'
-import { Input, Button } from 'antd'
+import { Input, Button, Typography } from 'antd'
 import { SendOutlined } from '@ant-design/icons'
+import { validateAiAskInput } from '../api/aiAsk'
 
 const { TextArea } = Input
+const { Text } = Typography
 
 interface AskInputProps {
   onSend: (content: string) => void
@@ -22,6 +25,7 @@ const AskInput: React.FC<AskInputProps> = ({
   autoFocus,
 }) => {
   const [value, setValue] = useState(initialValue || '')
+  const [inputError, setInputError] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialValue !== undefined) {
@@ -29,11 +33,25 @@ const AskInput: React.FC<AskInputProps> = ({
     }
   }, [initialValue])
 
+  const handleValueChange = (next: string) => {
+    setValue(next)
+    if (next.trim().length === 0) {
+      setInputError(null)
+      return
+    }
+    const validation = validateAiAskInput(next)
+    setInputError(validation.valid ? null : validation.error!.message)
+  }
+
   const handleSend = () => {
+    if (loading || disabled) return
     const trimmed = value.trim()
-    if (!trimmed || loading || disabled) return
     onSend(trimmed)
-    setValue('')
+    const validation = validateAiAskInput(value)
+    if (validation.valid) {
+      setValue('')
+      setInputError(null)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -44,68 +62,80 @@ const AskInput: React.FC<AskInputProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-      <TextArea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        autoSize={{ minRows: 2, maxRows: 6 }}
-        autoFocus={autoFocus}
-        style={{
-          flex: 1,
-          resize: 'none',
-          borderRadius: 10,
-          border: '1px solid #e0e0e0',
-          padding: '10px 14px',
-          fontSize: 14,
-          lineHeight: 1.6,
-          background: '#fff',
-          transition: 'border-color 0.2s, box-shadow 0.2s',
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = '#4E7BF5'
-          e.currentTarget.style.boxShadow = '0 0 0 2px rgba(78, 123, 245, 0.08)'
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = '#e0e0e0'
-          e.currentTarget.style.boxShadow = 'none'
-        }}
-        disabled={disabled}
-      />
-      <Button
-        type="primary"
-        icon={<SendOutlined />}
-        onClick={handleSend}
-        loading={loading}
-        disabled={!value.trim() || loading || disabled}
-        style={{
-          height: 44,
-          minWidth: 96,
-          borderRadius: 10,
-          border: 'none',
-          fontSize: 14,
-          fontWeight: 500,
-          background:
-            !value.trim() || loading || disabled
-              ? undefined
-              : 'linear-gradient(135deg, #4E7BF5, #58B9FF)',
-        }}
-        onMouseEnter={(e) => {
-          if (value.trim() && !loading && !disabled) {
-            e.currentTarget.style.background =
-              'linear-gradient(135deg, #3A6BE0, #4AADF0)'
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (value.trim() && !loading && !disabled) {
-            e.currentTarget.style.background =
-              'linear-gradient(135deg, #4E7BF5, #58B9FF)'
-          }
-        }}
-      >
-        问数
-      </Button>
+    <div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+        <TextArea
+          value={value}
+          onChange={(e) => handleValueChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          autoSize={{ minRows: 2, maxRows: 6 }}
+          autoFocus={autoFocus}
+          style={{
+            flex: 1,
+            resize: 'none',
+            borderRadius: 10,
+            border: `1px solid ${inputError ? '#ff4d4f' : '#e0e0e0'}`,
+            padding: '10px 14px',
+            fontSize: 14,
+            lineHeight: 1.6,
+            background: '#fff',
+            transition: 'border-color 0.2s, box-shadow 0.2s',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = inputError ? '#ff4d4f' : '#4E7BF5'
+            e.currentTarget.style.boxShadow = inputError
+              ? '0 0 0 2px rgba(255, 77, 79, 0.08)'
+              : '0 0 0 2px rgba(78, 123, 245, 0.08)'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = inputError ? '#ff4d4f' : '#e0e0e0'
+            e.currentTarget.style.boxShadow = 'none'
+          }}
+          disabled={disabled}
+        />
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={handleSend}
+          loading={loading}
+          disabled={loading || disabled}
+          style={{
+            height: 44,
+            minWidth: 96,
+            borderRadius: 10,
+            border: 'none',
+            fontSize: 14,
+            fontWeight: 500,
+            background:
+              loading || disabled
+                ? undefined
+                : 'linear-gradient(135deg, #4E7BF5, #58B9FF)',
+          }}
+          onMouseEnter={(e) => {
+            if (!loading && !disabled) {
+              e.currentTarget.style.background =
+                'linear-gradient(135deg, #3A6BE0, #4AADF0)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!loading && !disabled) {
+              e.currentTarget.style.background =
+                'linear-gradient(135deg, #4E7BF5, #58B9FF)'
+            }
+          }}
+        >
+          问数
+        </Button>
+      </div>
+      {inputError && (
+        <Text
+          type="danger"
+          style={{ display: 'block', marginTop: 6, fontSize: 13 }}
+        >
+          {inputError}
+        </Text>
+      )}
     </div>
   )
 }

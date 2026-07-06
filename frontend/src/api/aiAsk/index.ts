@@ -12,6 +12,8 @@ export type { ValidationResult, ValidationError } from './validator'
 export { MockAdapter }
 export { detectFollowUpType } from './followUpDetector'
 export type { FollowUpQuestion, FollowUpType, ProcessInsight } from '../../types/aiAsk'
+export { validateAiAskInput } from './inputGuard'
+export type { InputValidationResult, InputGuardErrorCode } from './inputGuard'
 
 export function useAiAskService() {
   const adapter = MockAdapter.create()
