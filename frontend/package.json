@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark": "tsx scripts/runQualityBenchmarks.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.4.0",
@@ -33,6 +34,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.3.1",
     "jsdom": "^24.1.0",
+    "tsx": "^4.23.0",
     "typescript": "^5.5.3",
     "vite": "^5.4.0",
     "vitest": "^2.0.5"
