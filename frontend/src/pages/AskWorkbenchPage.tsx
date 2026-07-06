@@ -17,7 +17,7 @@ import ContextChain from '../components/ContextChain'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
-import { useAiAskService, AiAskError, getAiAskErrorMessage } from '../api/aiAsk'
+import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput, buildMessageHistory } from '../api/aiAsk'
 import { formatCompact } from '../utils/numberFormat'
 import type { ProcessInsight, FollowUpQuestion, AiAskResponse } from '../types/aiAsk'
 
@@ -105,6 +105,13 @@ const AskWorkbenchPage: React.FC = () => {
   }
 
   const handleSend = useCallback(async (content: string) => {
+    // Phase 5I: Input Guard final blocking layer
+    const validation = validateAiAskInput(content)
+    if (!validation.valid) {
+      message.error(validation.error?.message ?? '输入无效')
+      return
+    }
+
     let sessionId = currentSessionId
     if (!sessionId) {
       try {
@@ -141,14 +148,9 @@ const AskWorkbenchPage: React.FC = () => {
         }
       }, 800)
 
-      // Phase 5H: Build messageHistory from previous response for follow-up context
+      // Phase 5I: Build messageHistory via Context Policy (Phase 5H behavior preserved)
       const prevResponse = useAiAskStore.getState().currentResponse
-      const messageHistory = prevResponse
-        ? [
-            { role: 'user' as const, content: prevResponse.question },
-            { role: 'assistant' as const, content: '', responseJson: prevResponse as unknown as Record<string, unknown> },
-          ]
-        : undefined
+      const messageHistory = buildMessageHistory(prevResponse)
 
       const resp = await adapter.analyze(content, {
         datasourceId,
@@ -537,6 +539,17 @@ const AskWorkbenchPage: React.FC = () => {
                     sqlPlan={currentResponse.sqlPlan}
                     onOpenInWorkbench={handleOpenInWorkbench}
                   />
+
+                  {/* Phase 5I: Truncated data notice */}
+                  {currentResponse.resultSummary?.truncated && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="结果仅显示部分数据，建议细化查询条件以获得更精确的结果"
+                      closable
+                      style={{ marginBottom: 12, borderRadius: 8 }}
+                    />
+                  )}
 
                   {/* Result summary table — Ant Design Table */}
                   {currentResponse.resultSummary && chartDataRef.current && (

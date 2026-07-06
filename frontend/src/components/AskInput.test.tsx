@@ -1,3 +1,4 @@
+// frontend/src/components/AskInput.test.tsx
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import AskInput from './AskInput'
@@ -21,7 +22,7 @@ describe('AskInput', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe('上季度收入')
   })
 
-  it('calls onSend and clears input on send', () => {
+  it('calls onSend and clears input on valid send', () => {
     const onSend = vi.fn()
     render(<AskInput onSend={onSend} />)
     const textarea = screen.getByPlaceholderText(/用自然语言描述/)
@@ -49,17 +50,87 @@ describe('AskInput', () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it('disables send button when input is empty', () => {
+  it('does not disable send button based on input content', () => {
     render(<AskInput onSend={() => {}} />)
-    const button = screen.getByText('问数').closest('button')
-    expect(button).toBeDisabled()
-  })
-
-  it('enables send button when input has text', () => {
-    render(<AskInput onSend={() => {}} />)
-    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
-    fireEvent.change(textarea, { target: { value: 'something' } })
     const button = screen.getByText('问数').closest('button')
     expect(button).not.toBeDisabled()
+  })
+
+  it('does not call onSend and keeps input when validation fails', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '，，！' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).not.toHaveBeenCalled()
+    expect((textarea as HTMLTextAreaElement).value).toBe('，，！')
+  })
+
+  it('does not send or clear whitespace-only input', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '   ' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).not.toHaveBeenCalled()
+    expect((textarea as HTMLTextAreaElement).value).toBe('   ')
+  })
+
+  it('submits trimmed value when valid input is wrapped in whitespace', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '  近 7 天销量  ' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).toHaveBeenCalledWith('近 7 天销量')
+    expect((textarea as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('does not treat leading/trailing whitespace as exceeding max length', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    const base = 'a'.repeat(500)
+    fireEvent.change(textarea, { target: { value: `  ${base}  ` } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).toHaveBeenCalledWith(base)
+    expect(screen.queryByText(/缩短到 500 字以内/)).not.toBeInTheDocument()
+  })
+
+  it('shows TOO_LONG when trimmed content exceeds max length', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: `  ${'a'.repeat(501)}  ` } })
+    expect(screen.getByText(/缩短到 500 字以内/)).toBeInTheDocument()
+  })
+
+  it('shows real-time error for punctuation-only input', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '，，！' } })
+    expect(screen.getByText(/不能仅包含标点或符号/)).toBeInTheDocument()
+  })
+
+  it('shows real-time error for too-long input', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: 'a'.repeat(501) } })
+    expect(screen.getByText(/缩短到 500 字以内/)).toBeInTheDocument()
+  })
+
+  it('shows real-time error for input with invalid control characters', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: 'test' } })
+    expect(screen.getByText(/输入包含无效字符/)).toBeInTheDocument()
+  })
+
+  it('clears real-time error when input becomes valid', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '，，！' } })
+    expect(screen.getByText(/不能仅包含标点或符号/)).toBeInTheDocument()
+    fireEvent.change(textarea, { target: { value: '各区域销售额' } })
+    expect(screen.queryByText(/不能仅包含标点或符号/)).not.toBeInTheDocument()
   })
 })
