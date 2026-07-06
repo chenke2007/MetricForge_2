@@ -85,8 +85,10 @@ vi.mock('../api/askSessions', () => ({
 
 vi.mock('../api/aiAsk', async () => {
   const inputGuard = await vi.importActual('../api/aiAsk/inputGuard')
+  const contextPolicy = await vi.importActual('../api/aiAsk/contextPolicy')
   return {
     validateAiAskInput: (inputGuard as any).validateAiAskInput,
+    buildMessageHistory: (contextPolicy as any).buildMessageHistory,
     useAiAskService: vi.fn(() => ({
       name: 'MockAdapter',
       analyze: mockedAnalyze,
@@ -388,7 +390,7 @@ describe('AskWorkbenchPage', () => {
   it('blocks invalid input and does not call adapter.analyze', async () => {
     mockAskStore.currentSessionId = 1
     mockedAnalyze.mockResolvedValue(makeMockResponse())
-    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => undefined as unknown as ReturnType<typeof message.error>)
 
     renderPage()
     fireEvent.click(screen.getByTestId('mock-send-invalid-btn'))
@@ -404,7 +406,7 @@ describe('AskWorkbenchPage', () => {
   it('blocks empty input from submit path and shows page-level error', async () => {
     mockAskStore.currentSessionId = 1
     mockedAnalyze.mockResolvedValue(makeMockResponse())
-    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => undefined as unknown as ReturnType<typeof message.error>)
 
     renderPage()
     fireEvent.click(screen.getByTestId('mock-send-empty-btn'))

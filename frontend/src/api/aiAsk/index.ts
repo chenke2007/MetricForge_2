@@ -14,6 +14,8 @@ export { detectFollowUpType } from './followUpDetector'
 export type { FollowUpQuestion, FollowUpType, ProcessInsight } from '../../types/aiAsk'
 export { validateAiAskInput } from './inputGuard'
 export type { InputValidationResult, InputGuardErrorCode } from './inputGuard'
+export { buildMessageHistory, compressResponse, compressHistory, truncateHistory, DEFAULT_CONTEXT_CONFIG } from './contextPolicy'
+export type { ContextPolicyConfig, CompressHistoryOptions } from './contextPolicy'
 
 export function useAiAskService() {
   const adapter = MockAdapter.create()

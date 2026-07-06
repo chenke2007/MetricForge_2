@@ -17,7 +17,7 @@ import ContextChain from '../components/ContextChain'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
-import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput } from '../api/aiAsk'
+import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput, buildMessageHistory } from '../api/aiAsk'
 import { formatCompact } from '../utils/numberFormat'
 import type { ProcessInsight, FollowUpQuestion, AiAskResponse } from '../types/aiAsk'
 
@@ -108,7 +108,7 @@ const AskWorkbenchPage: React.FC = () => {
     // Phase 5I: Input Guard final blocking layer
     const validation = validateAiAskInput(content)
     if (!validation.valid) {
-      message.error(validation.error.message)
+      message.error(validation.error?.message ?? '输入无效')
       return
     }
 
@@ -148,14 +148,9 @@ const AskWorkbenchPage: React.FC = () => {
         }
       }, 800)
 
-      // Phase 5H: Build messageHistory from previous response for follow-up context
+      // Phase 5I: Build messageHistory via Context Policy (Phase 5H behavior preserved)
       const prevResponse = useAiAskStore.getState().currentResponse
-      const messageHistory = prevResponse
-        ? [
-            { role: 'user' as const, content: prevResponse.question },
-            { role: 'assistant' as const, content: '', responseJson: prevResponse as unknown as Record<string, unknown> },
-          ]
-        : undefined
+      const messageHistory = buildMessageHistory(prevResponse)
 
       const resp = await adapter.analyze(content, {
         datasourceId,
