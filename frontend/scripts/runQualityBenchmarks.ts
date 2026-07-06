@@ -23,15 +23,31 @@ export interface ModuleReport {
   failures: BenchmarkFailure[]
 }
 
+export interface BenchmarkSummary {
+  totalCases: number
+  passed: number
+  failed: number
+  passRate: number
+}
+
 export interface QualityBenchmarkReport {
   timestamp: string
   duration: number
+  summary: BenchmarkSummary
   modules: {
     inputGuard: ModuleReport
     contextPolicy: ModuleReport
     followUpDetector: ModuleReport
     adapter: ModuleReport
   }
+}
+
+function computeSummary(modules: QualityBenchmarkReport['modules']): BenchmarkSummary {
+  const totalCases = Object.values(modules).reduce((sum, m) => sum + m.total, 0)
+  const passed = Object.values(modules).reduce((sum, m) => sum + m.passed, 0)
+  const failed = Object.values(modules).reduce((sum, m) => sum + m.failed, 0)
+  const passRate = totalCases > 0 ? Number(((passed / totalCases) * 100).toFixed(2)) : 0
+  return { totalCases, passed, failed, passRate }
 }
 
 async function main(): Promise<void> {
@@ -47,10 +63,14 @@ async function main(): Promise<void> {
     runAdapterBenchmark(),
   ])
 
+  const modules = { inputGuard, contextPolicy, followUpDetector, adapter }
+  const summary = computeSummary(modules)
+
   const report: QualityBenchmarkReport = {
     timestamp,
     duration: Date.now() - start,
-    modules: { inputGuard, contextPolicy, followUpDetector, adapter },
+    summary,
+    modules,
   }
 
   const outDir = path.join(__dirname, 'benchmark-results')
@@ -66,23 +86,18 @@ async function main(): Promise<void> {
   console.log('='.repeat(60))
   console.log(JSON.stringify(report, null, 2))
 
-  const totalCases = Object.values(report.modules).reduce((sum, m) => sum + m.total, 0)
-  const totalPassed = Object.values(report.modules).reduce((sum, m) => sum + m.passed, 0)
-  const totalFailed = Object.values(report.modules).reduce((sum, m) => sum + m.failed, 0)
-  const passRate = totalCases > 0 ? ((totalPassed / totalCases) * 100).toFixed(2) : '0.00'
-
   console.log('\n' + '='.repeat(60))
   console.log('SUMMARY')
   console.log('='.repeat(60))
-  console.log(`  Total cases:  ${totalCases}`)
-  console.log(`  Passed:       ${totalPassed}`)
-  console.log(`  Failed:       ${totalFailed}`)
-  console.log(`  Pass rate:    ${passRate}%`)
+  console.log(`  Total cases:  ${summary.totalCases}`)
+  console.log(`  Passed:       ${summary.passed}`)
+  console.log(`  Failed:       ${summary.failed}`)
+  console.log(`  Pass rate:    ${summary.passRate}%`)
   console.log(`  Duration:     ${report.duration}ms`)
   console.log(`  Report:       ${outPath}`)
 
-  if (totalFailed > 0) {
-    console.error(`\n${totalFailed} benchmark assertion(s) failed`)
+  if (summary.failed > 0) {
+    console.error(`\n${summary.failed} benchmark assertion(s) failed`)
     process.exit(1)
   }
 }
