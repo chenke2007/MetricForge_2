@@ -141,10 +141,20 @@ const AskWorkbenchPage: React.FC = () => {
         }
       }, 800)
 
+      // Phase 5H: Build messageHistory from previous response for follow-up context
+      const prevResponse = useAiAskStore.getState().currentResponse
+      const messageHistory = prevResponse
+        ? [
+            { role: 'user' as const, content: prevResponse.question },
+            { role: 'assistant' as const, content: '', responseJson: prevResponse as unknown as Record<string, unknown> },
+          ]
+        : undefined
+
       const resp = await adapter.analyze(content, {
         datasourceId,
         datasourceName,
         selectedTables,
+        messageHistory,
         options: { mockDelay: [1500, 2500] },
       })
 
