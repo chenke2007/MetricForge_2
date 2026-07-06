@@ -296,6 +296,34 @@ describe('AskWorkbenchPage', () => {
     expect(screen.getByTestId('ai-narrative')).toBeInTheDocument()
   })
 
+  it('shows truncated data notice when resultSummary.truncated is true', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = makeMockResponse({
+      resultSummary: { rowCount: 100, durationMs: 200, truncated: true },
+    })
+    mockAiAskState.isAnalyzing = false
+    renderPage()
+    expect(screen.getByText('结果仅显示部分数据，建议细化查询条件以获得更精确的结果')).toBeInTheDocument()
+  })
+
+  it('does not show truncated notice when resultSummary.truncated is false', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = makeMockResponse({
+      resultSummary: { rowCount: 6, durationMs: 200, truncated: false },
+    })
+    mockAiAskState.isAnalyzing = false
+    renderPage()
+    expect(screen.queryByText('结果仅显示部分数据，建议细化查询条件以获得更精确的结果')).not.toBeInTheDocument()
+  })
+
+  it('does not show truncated notice when resultSummary is absent', () => {
+    mockAskStore.currentSessionId = 1
+    mockAiAskState.currentResponse = makeMockResponse({ resultSummary: undefined })
+    mockAiAskState.isAnalyzing = false
+    renderPage()
+    expect(screen.queryByText('结果仅显示部分数据，建议细化查询条件以获得更精确的结果')).not.toBeInTheDocument()
+  })
+
   it('shows result summary header when resultSummary is available', () => {
     mockAskStore.currentSessionId = 1
     mockAiAskState.currentResponse = makeMockResponse()

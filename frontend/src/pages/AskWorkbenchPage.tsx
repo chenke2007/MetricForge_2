@@ -540,6 +540,17 @@ const AskWorkbenchPage: React.FC = () => {
                     onOpenInWorkbench={handleOpenInWorkbench}
                   />
 
+                  {/* Phase 5I: Truncated data notice */}
+                  {currentResponse.resultSummary?.truncated && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="结果仅显示部分数据，建议细化查询条件以获得更精确的结果"
+                      closable
+                      style={{ marginBottom: 12, borderRadius: 8 }}
+                    />
+                  )}
+
                   {/* Result summary table — Ant Design Table */}
                   {currentResponse.resultSummary && chartDataRef.current && (
                     <div
