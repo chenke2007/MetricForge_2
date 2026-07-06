@@ -56,14 +56,52 @@ describe('AskInput', () => {
     expect(button).not.toBeDisabled()
   })
 
-  it('does not clear input when validation fails', () => {
+  it('does not call onSend and keeps input when validation fails', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '，，！' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).not.toHaveBeenCalled()
+    expect((textarea as HTMLTextAreaElement).value).toBe('，，！')
+  })
+
+  it('does not send or clear whitespace-only input', () => {
     const onSend = vi.fn()
     render(<AskInput onSend={onSend} />)
     const textarea = screen.getByPlaceholderText(/用自然语言描述/)
     fireEvent.change(textarea, { target: { value: '   ' } })
     fireEvent.click(screen.getByText('问数'))
-    expect(onSend).toHaveBeenCalledWith('')
+    expect(onSend).not.toHaveBeenCalled()
     expect((textarea as HTMLTextAreaElement).value).toBe('   ')
+  })
+
+  it('submits trimmed value when valid input is wrapped in whitespace', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '  近 7 天销量  ' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).toHaveBeenCalledWith('近 7 天销量')
+    expect((textarea as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('does not treat leading/trailing whitespace as exceeding max length', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    const base = 'a'.repeat(500)
+    fireEvent.change(textarea, { target: { value: `  ${base}  ` } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).toHaveBeenCalledWith(base)
+    expect(screen.queryByText(/缩短到 500 字以内/)).not.toBeInTheDocument()
+  })
+
+  it('shows TOO_LONG when trimmed content exceeds max length', () => {
+    render(<AskInput onSend={() => {}} />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: `  ${'a'.repeat(501)}  ` } })
+    expect(screen.getByText(/缩短到 500 字以内/)).toBeInTheDocument()
   })
 
   it('shows real-time error for punctuation-only input', () => {

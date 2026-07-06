@@ -155,6 +155,15 @@ vi.mock('../components/AskInput', () => ({
       >
         Send Invalid
       </button>
+      <button
+        data-testid="mock-send-empty-btn"
+        onClick={() => {
+          if (!loading) onSend?.('')
+        }}
+        type="button"
+      >
+        Send Empty
+      </button>
     </div>
   ),
 }))
@@ -386,6 +395,22 @@ describe('AskWorkbenchPage', () => {
 
     await waitFor(() => {
       expect(errorSpy).toHaveBeenCalledWith('请输入有效的问题，不能仅包含标点或符号')
+    })
+    expect(mockedAnalyze).not.toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
+
+  it('blocks empty input from submit path and shows page-level error', async () => {
+    mockAskStore.currentSessionId = 1
+    mockedAnalyze.mockResolvedValue(makeMockResponse())
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => {})
+
+    renderPage()
+    fireEvent.click(screen.getByTestId('mock-send-empty-btn'))
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith('请输入问题')
     })
     expect(mockedAnalyze).not.toHaveBeenCalled()
 

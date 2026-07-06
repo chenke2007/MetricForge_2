@@ -35,23 +35,28 @@ const AskInput: React.FC<AskInputProps> = ({
 
   const handleValueChange = (next: string) => {
     setValue(next)
-    if (next.trim().length === 0) {
+    const trimmed = next.trim()
+    if (trimmed.length === 0) {
       setInputError(null)
       return
     }
-    const validation = validateAiAskInput(next)
+    const validation = validateAiAskInput(trimmed)
     setInputError(validation.valid ? null : validation.error!.message)
   }
 
   const handleSend = () => {
     if (loading || disabled) return
     const trimmed = value.trim()
-    onSend(trimmed)
-    const validation = validateAiAskInput(value)
-    if (validation.valid) {
-      setValue('')
-      setInputError(null)
+    const validation = validateAiAskInput(trimmed)
+    if (!validation.valid) {
+      // Keep the input visible so the user can see and fix it. Real-time validation
+      // already shows the error for non-empty invalid input; whitespace-only input
+      // intentionally shows no error here (minor #2 unchanged).
+      return
     }
+    onSend(trimmed)
+    setValue('')
+    setInputError(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
