@@ -2,15 +2,18 @@ import React from 'react'
 import { Card, Tag, Typography, Space } from 'antd'
 import { BulbOutlined } from '@ant-design/icons'
 import type { AiAskResponse } from '../types/aiAsk'
+import type { ProcessInsight } from '../types/aiAsk'
+import ProcessPanel from './ProcessPanel'
 
 const { Text } = Typography
 
 interface IntentCardProps {
   intent: AiAskResponse['intent']
   semanticGaps: AiAskResponse['semanticGaps']
+  processInsight?: ProcessInsight  // Phase 5H addition
 }
 
-const IntentCard: React.FC<IntentCardProps> = ({ intent, semanticGaps }) => {
+const IntentCard: React.FC<IntentCardProps> = ({ intent, semanticGaps, processInsight }) => {
   return (
     <Card
       size="small"
@@ -84,6 +87,7 @@ const IntentCard: React.FC<IntentCardProps> = ({ intent, semanticGaps }) => {
           ))}
         </div>
       )}
+      {processInsight && <ProcessPanel process={processInsight} />}
     </Card>
   )
 }

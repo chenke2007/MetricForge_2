@@ -10,6 +10,8 @@ export { getAiAskErrorMessage }
 export { validateAiAskResponse }
 export type { ValidationResult, ValidationError } from './validator'
 export { MockAdapter }
+export { detectFollowUpType } from './followUpDetector'
+export type { FollowUpQuestion, FollowUpType, ProcessInsight } from '../../types/aiAsk'
 
 export function useAiAskService() {
   const adapter = MockAdapter.create()

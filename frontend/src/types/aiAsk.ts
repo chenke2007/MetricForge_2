@@ -5,6 +5,64 @@ export type Aggregation = 'sum' | 'avg' | 'count' | 'min' | 'max'
 export type ChartTheme = 'business-light' | 'executive-blue' | 'soft-gradient'
 export type GapReason = 'not_found' | 'ambiguous' | 'incomplete'
 
+// --- Phase 5H: Follow-up & Context ---
+
+export type FollowUpType =
+  | 'why_down'
+  | 'drill_down'
+  | 'switch_metric'
+  | 'top_n'
+  | 'explain_anomaly'
+  | 'time_shift'
+  | 'general_followup'
+
+export interface FollowUpQuestion {
+  type: FollowUpType
+  targetFields?: string[]
+  targetDimension?: string
+  targetValue?: string
+  relatedMetrics?: string[]
+  relatedDimensions?: string[]
+  relatedFilter?: string
+  timeRangeShift?: string
+  confidence: 'high' | 'medium' | 'low'
+  inferenceReason?: string
+}
+
+export interface ProcessInsight {
+  understoodMetrics: string[]
+  understoodDimensions: string[]
+  understoodTimeRange?: string
+  understoodFilters: string[]
+  semanticGaps: Array<{
+    field: string
+    candidates?: string[]
+    severity: 'low' | 'medium' | 'high'
+  }>
+  analysisStrategy?: string
+  contextChain?: string[]
+}
+
+export interface EvidenceItem {
+  claim: string
+  fields: string[]
+  sqlSnippet?: string
+  value?: string
+  significance?: string
+}
+
+export interface RiskItem {
+  risk: string
+  impact?: string
+  suggestion?: string
+}
+
+export interface NextQuestion {
+  question: string
+  followUpType?: FollowUpType
+  contextHint?: string
+}
+
 export type MetricIcon = 'revenue' | 'orders' | 'customers' | 'profit' | 'rate'
 
 export interface MetricCard {
@@ -40,13 +98,11 @@ export interface SemanticGap {
 export interface AiInsightNarrative {
   summary: string
   keyFindings: string[]
-  evidence: Array<{
-    claim: string
-    fields: string[]
-    sqlSnippet?: string
-  }>
-  risks: string[]
-  nextQuestions: string[]
+  evidence: EvidenceItem[]
+  risks: Array<string | RiskItem>
+  nextQuestions: Array<string | NextQuestion>
+  // Phase 5H additions:
+  conclusion?: string
 }
 
 export interface AiAskResponse {
@@ -74,4 +130,7 @@ export interface AiAskResponse {
   chartSuggestions: AiChartSpec[]
   narrative: AiInsightNarrative
   semanticGaps: SemanticGap[]
+  // Phase 5H additions:
+  followUp?: FollowUpQuestion
+  contextSummary?: string
 }

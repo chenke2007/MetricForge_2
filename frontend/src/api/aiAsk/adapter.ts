@@ -13,6 +13,7 @@ export interface AiAskContext {
   options?: {
     mockDelay?: [number, number]
     mockFailureRate?: number
+    forceFollowUpType?: import('../../types/aiAsk').FollowUpType
   }
 }
 

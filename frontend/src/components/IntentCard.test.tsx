@@ -58,3 +58,37 @@ describe('IntentCard', () => {
     expect(screen.getByText('暂无意图信息')).toBeInTheDocument()
   })
 })
+
+describe('IntentCard with ProcessPanel', () => {
+  it('renders AI 理解过程 toggle when processInsight provided', () => {
+    const defaultIntent = {
+      metrics: ['销售额'],
+      dimensions: ['区域'],
+      filters: [],
+      timeRange: undefined,
+    }
+    render(<IntentCard
+      intent={defaultIntent}
+      semanticGaps={[]}
+      processInsight={{
+        understoodMetrics: ['销售额'],
+        understoodDimensions: ['区域'],
+        understoodTimeRange: undefined,
+        understoodFilters: [],
+        semanticGaps: [],
+      }}
+    />)
+    expect(screen.getByText(/AI 理解过程/)).toBeInTheDocument()
+  })
+
+  it('does not render AI 理解过程 when processInsight is undefined', () => {
+    const defaultIntent = {
+      metrics: ['销售额'],
+      dimensions: ['区域'],
+      filters: [],
+      timeRange: undefined,
+    }
+    render(<IntentCard intent={defaultIntent} semanticGaps={[]} />)
+    expect(screen.queryByText(/AI 理解过程/)).not.toBeInTheDocument()
+  })
+})

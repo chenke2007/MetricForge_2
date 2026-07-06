@@ -1,8 +1,12 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import AskWorkbenchPage from './AskWorkbenchPage'
+
+const { mockedAnalyze } = vi.hoisted(() => ({
+  mockedAnalyze: vi.fn(),
+}))
 
 // --- Mocks ---
 
@@ -57,12 +61,14 @@ let mockAiAskState: Record<string, any> = {
   reset: vi.fn(),
 }
 
-vi.mock('../stores/aiAskStore', () => ({
-  useAiAskStore: vi.fn((selector?: (s: typeof mockAiAskState) => any) => {
+vi.mock('../stores/aiAskStore', () => {
+  const useAiAskStore = vi.fn((selector?: (s: typeof mockAiAskState) => any) => {
     if (selector) return selector(mockAiAskState)
     return mockAiAskState
-  }),
-}))
+  })
+  ;(useAiAskStore as any).getState = vi.fn(() => mockAiAskState)
+  return { useAiAskStore }
+})
 
 vi.mock('../api/askSessions', () => ({
   useAskMessages: vi.fn(() => ({ data: [], isLoading: false })),
@@ -79,7 +85,7 @@ vi.mock('../api/askSessions', () => ({
 vi.mock('../api/aiAsk', () => ({
   useAiAskService: vi.fn(() => ({
     name: 'MockAdapter',
-    analyze: vi.fn(),
+    analyze: mockedAnalyze,
     getChartData: vi.fn(() => ({ columns: ['region', 'revenue'], rows: [['华东', 1000]], isEmpty: false })),
     isAvailable: vi.fn(() => true),
     validate: vi.fn(() => ({ valid: true, errors: [], warnings: [] })),
@@ -123,7 +129,20 @@ vi.mock('../components/PromptCards', () => ({
 }))
 
 vi.mock('../components/AskInput', () => ({
-  default: () => <div data-testid="ask-input">AskInput</div>,
+  default: ({ onSend, loading }: any) => (
+    <div data-testid="ask-input">
+      AskInput
+      <button
+        data-testid="mock-send-btn"
+        onClick={() => {
+          if (!loading) onSend?.('follow-up question about 华东')
+        }}
+        type="button"
+      >
+        Send
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('../components/IntentCard', () => ({
@@ -140,6 +159,10 @@ vi.mock('../components/AiChartBoard', () => ({
 
 vi.mock('../components/AiNarrative', () => ({
   default: () => <div data-testid="ai-narrative">AiNarrative</div>,
+}))
+
+vi.mock('../components/ContextChain', () => ({
+  default: () => <div data-testid="context-chain">ContextChain</div>,
 }))
 
 vi.mock('../components/SemanticGapAlert', () => ({
@@ -286,6 +309,48 @@ describe('AskWorkbenchPage', () => {
     // Only one "进行中..." (for step 5)
     const progressLabels = screen.getAllByText('进行中...')
     expect(progressLabels.length).toBe(1)
+  })
+
+  it('passes messageHistory with previous responseJson on second send (Phase 5H follow-up integration)', async () => {
+    mockAskStore.currentSessionId = 1
+    // Simulate a first-round response being stored
+    const firstResponse = makeMockResponse({ question: '上个月各区域销售额' })
+    mockAiAskState.currentResponse = firstResponse
+    mockAiAskState.isAnalyzing = false
+
+    // Make analyze resolve to a follow-up-like response
+    mockedAnalyze.mockResolvedValue(makeMockResponse({
+      question: 'follow-up question about 华东',
+      followUp: { type: 'drill_down', confidence: 'high' },
+    }))
+
+    renderPage()
+
+    // Verify welcome/result state is shown (session exists + response exists)
+    expect(screen.getByTestId('ask-input')).toBeInTheDocument()
+
+    // Click the mock send button to trigger a second turn
+    const sendBtn = screen.getByTestId('mock-send-btn')
+    fireEvent.click(sendBtn)
+
+    // Wait for analyze to be called
+    await waitFor(() => {
+      expect(mockedAnalyze).toHaveBeenCalled()
+    })
+
+    // Analyze should have been called with messageHistory containing assistant responseJson
+    const analyzeCallArgs = mockedAnalyze.mock.calls[0]
+    const callContext = analyzeCallArgs[1] // second argument (AiAskContext)
+
+    // Verify messageHistory is present and structured correctly
+    expect(callContext.messageHistory).toBeDefined()
+    expect(callContext.messageHistory).toHaveLength(2)
+    expect(callContext.messageHistory[0].role).toBe('user')
+    expect(callContext.messageHistory[0].content).toBe('上个月各区域销售额')
+    expect(callContext.messageHistory[1].role).toBe('assistant')
+    expect(callContext.messageHistory[1].responseJson).toBeDefined()
+    // Verify the assistant responseJson contains the original question
+    expect((callContext.messageHistory[1].responseJson as any).question).toBe('上个月各区域销售额')
   })
 
   it('shows error alert when error is set', () => {
