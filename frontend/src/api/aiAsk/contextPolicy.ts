@@ -131,7 +131,7 @@ export function truncateHistory(
 
   const maxMessages = maxTurns * 2
   if (normalizedHistory.length <= maxMessages) {
-    return normalizedHistory
+    return normalizedHistory.slice()
   }
 
   return normalizedHistory.slice(-maxMessages)

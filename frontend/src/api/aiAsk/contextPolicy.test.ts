@@ -157,6 +157,29 @@ describe('truncateHistory', () => {
     expect(truncateHistory(history, 2)).toHaveLength(2)
   })
 
+  it('returns a new array reference when no truncation is needed', () => {
+    const history = buildMessageHistory(baseResponse)!
+    const result = truncateHistory(history, 2)
+    expect(result).toHaveLength(2)
+    expect(result).toEqual(history)
+    expect(result).not.toBe(history)
+  })
+
+  it('returns a new array reference for multi-turn history that fits', () => {
+    const history = [
+      { role: 'user' as const, content: 'q1' },
+      { role: 'assistant' as const, content: '', responseJson: { question: 'q1' } as Record<string, unknown> },
+      { role: 'user' as const, content: 'q2' },
+      { role: 'assistant' as const, content: '', responseJson: { question: 'q2' } as Record<string, unknown> },
+    ]
+    const result = truncateHistory(history, 2)
+    expect(result).toHaveLength(4)
+    expect(result).toEqual(history)
+    expect(result).not.toBe(history)
+    // Verify original is not mutated
+    expect(history).toHaveLength(4)
+  })
+
   it('truncates to the most recent user-assistant turns', () => {
     const history = [
       { role: 'user' as const, content: 'q1' },
