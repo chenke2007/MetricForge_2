@@ -299,6 +299,28 @@ describe('validateAiAskResponse', () => {
     expect(result.errors.some((e) => e.path === 'narrative.evidence[0].fields')).toBe(true)
   })
 
+  it('errors when evidence.fields contains only empty string', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrative: {
+        ...validResponse.narrative,
+        evidence: [{ ...validResponse.narrative.evidence[0], fields: [''] }],
+      },
+    })
+    expect(result.errors.some((e) => e.path === 'narrative.evidence[0].fields')).toBe(true)
+  })
+
+  it('warns when evidence.sourceFields contains only empty string', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrative: {
+        ...validResponse.narrative,
+        evidence: [{ ...validResponse.narrative.evidence[0], sourceFields: [''] }],
+      },
+    })
+    expect(result.warnings.some((w) => w.includes('sourceFields'))).toBe(true)
+  })
+
   it('warns when evidence.sqlSnippet is missing', () => {
     const { sqlSnippet: _, ...item } = validResponse.narrative.evidence[0]
     const result = validateAiAskResponse({

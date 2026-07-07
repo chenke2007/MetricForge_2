@@ -34,7 +34,11 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
-  return isStringArray(value) && value.length > 0
+  return (
+    isStringArray(value) &&
+    value.length > 0 &&
+    value.every((item) => item.trim().length > 0)
+  )
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
