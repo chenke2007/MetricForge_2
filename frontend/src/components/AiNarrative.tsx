@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Card, Typography } from 'antd'
 import { CommentOutlined } from '@ant-design/icons'
 import type { AiInsightNarrative, RiskItem, NextQuestion } from '../types/aiAsk'
@@ -30,6 +30,13 @@ function renderRiskItem(r: string | RiskItem, i: number) {
       )}
     </div>
   )
+}
+
+function renderConfidence(confidence?: 'high' | 'medium' | 'low') {
+  if (confidence === 'high') return <span style={{ color: '#52c41a', fontSize: 12 }}>✅ 高</span>
+  if (confidence === 'medium') return <span style={{ color: '#fa8c16', fontSize: 12 }}>⚠️ 中</span>
+  if (confidence === 'low') return <span style={{ color: '#ff4d4f', fontSize: 12 }}>❌ 低</span>
+  return null
 }
 
 function renderNextQuestion(q: string | NextQuestion, i: number, onAsk?: (q: string) => void) {
@@ -65,6 +72,19 @@ interface AiNarrativeProps {
 }
 
 const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) => {
+  const [expandedEvidenceIndices, setExpandedEvidenceIndices] = useState<Set<number>>(new Set())
+
+  const toggleEvidence = (index: number) => {
+    setExpandedEvidenceIndices(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
   const hasConclusion = narrative.conclusion && narrative.conclusion.length > 0
   const hasEvidence = narrative.evidence && narrative.evidence.length > 0
   const hasRisks = narrative.risks && narrative.risks.length > 0
@@ -146,42 +166,149 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         </div>
       )}
 
-      {/* Evidence (Phase 5H enhanced) */}
+      {/* Evidence (Phase 5H enhanced + Phase 5J progressive disclosure) */}
       {hasEvidence && (
         <div style={{ marginBottom: 12 }}>
           <Text strong style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
             证据
           </Text>
-          {narrative.evidence.map((e, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: 13,
-                color: '#444',
-                padding: '4px 0 4px 16px',
-                lineHeight: 1.6,
-              }}
-            >
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: -14, color: '#52c41a' }}>•</span>
-                <span>{e.claim}</span>
-                {(e.value || e.significance) && (
-                  <span style={{ color: '#666', fontSize: 12 }}>
-                    {' — '}
-                    {e.value && <span>{e.value}</span>}
-                    {e.value && e.significance && <span> · </span>}
-                    {e.significance && <span>{e.significance}</span>}
-                  </span>
+
+          {/* evidenceSummary (Phase 5J) */}
+          {narrative.evidenceSummary && (
+            <div style={{
+              fontSize: 12, color: '#666', marginBottom: 8, padding: '6px 10px',
+              background: '#fafafa', borderRadius: 4, border: '1px solid #f0f0f0',
+            }}>
+              📎 {narrative.evidenceSummary}
+            </div>
+          )}
+
+          {narrative.evidence.map((e, i) => {
+            const isExpanded = expandedEvidenceIndices.has(i)
+            const hasDetails = e.sourceFields || e.calculation || e.confidence || e.sqlSnippet
+            return (
+              <div key={i} style={{ marginBottom: 4 }}>
+                {/* Evidence row */}
+                <div style={{
+                  fontSize: 13, color: '#444', padding: '4px 0 4px 16px',
+                  lineHeight: 1.6, position: 'relative',
+                }}>
+                  <span style={{ position: 'absolute', left: 0, color: '#52c41a' }}>•</span>
+                  <span>{e.claim}</span>
+                  {e.displayValue && (
+                    <span style={{ color: '#333', fontWeight: 500 }}>
+                      {' — '}{e.displayValue}
+                    </span>
+                  )}
+                  {!e.displayValue && (e.value || e.significance) && (
+                    <span style={{ color: '#666', fontSize: 12 }}>
+                      {' — '}
+                      {e.value && <span>{e.value}</span>}
+                      {e.value && e.significance && <span> · </span>}
+                      {e.significance && <span>{e.significance}</span>}
+                    </span>
+                  )}
+                  {/* Inline confidence indicator */}
+                  {e.confidence && (
+                    <span style={{ marginLeft: 8 }}>{renderConfidence(e.confidence)}</span>
+                  )}
+                </div>
+
+                {/* "查看证据" button — only show if there are Phase 5J details */}
+                {hasDetails && (
+                  <div style={{ paddingLeft: 16 }}>
+                    <span
+                      onClick={() => toggleEvidence(i)}
+                      style={{
+                        fontSize: 11, color: '#999', cursor: 'pointer',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {isExpanded ? '收起证据 ▲' : '查看证据 ▼'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Expanded detail panel */}
+                {isExpanded && hasDetails && (
+                  <div style={{
+                    margin: '4px 0 6px 16px', padding: '10px 12px',
+                    background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0',
+                    fontSize: 12, lineHeight: 1.8,
+                  }}>
+                    {/* 结论来源 */}
+                    {e.sourceFields && e.sourceFields.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <Text strong style={{ fontSize: 11, color: '#666', display: 'block' }}>
+                          结论来源
+                        </Text>
+                        <div style={{ color: '#555', paddingLeft: 8 }}>
+                          字段：{e.sourceFields.join(', ')}
+                          {e.fields.length > 0 && <span>（业务名：{e.fields.join(', ')}）</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 计算说明 */}
+                    {e.calculation && (
+                      <div style={{ marginBottom: 6 }}>
+                        <Text strong style={{ fontSize: 11, color: '#666', display: 'block' }}>
+                          计算说明
+                        </Text>
+                        <code style={{
+                          display: 'block', padding: '6px 8px', background: '#f5f5f5',
+                          borderRadius: 4, fontSize: 11, color: '#1d1d1d',
+                          fontFamily: "'Consolas', 'Courier New', monospace",
+                          whiteSpace: 'pre-wrap', lineHeight: 1.5,
+                        }}>
+                          {e.calculation}
+                        </code>
+                      </div>
+                    )}
+
+                    {/* SQL snippet */}
+                    {e.sqlSnippet && (
+                      <div style={{ marginBottom: 6 }}>
+                        <Text strong style={{ fontSize: 11, color: '#666', display: 'block' }}>
+                          关联查询
+                        </Text>
+                        <code style={{
+                          display: 'block', padding: '6px 8px', background: '#f5f5f5',
+                          borderRadius: 4, fontSize: 11, color: '#1d1d1d',
+                          fontFamily: "'Consolas', 'Courier New', monospace",
+                          whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 160, overflowY: 'auto',
+                        }}>
+                          {e.sqlSnippet}
+                        </code>
+                      </div>
+                    )}
+
+                    {/* 可信度 */}
+                    {e.confidence && (
+                      <div>
+                        <Text strong style={{ fontSize: 11, color: '#666', display: 'block' }}>
+                          可信度：{renderConfidence(e.confidence)}
+                        </Text>
+                        {e.confidenceReason && (
+                          <div style={{ color: '#555', paddingLeft: 8, fontSize: 11 }}>
+                            原因：{e.confidenceReason}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Fallback: old format without Phase 5J fields shows source fields inline */}
+                {!hasDetails && e.fields.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#999', marginTop: 2, paddingLeft: 16 }}>
+                    → 来源字段：{e.fields.join(', ')}
+                    {e.sqlSnippet && <span> · SQL: {e.sqlSnippet}</span>}
+                  </div>
                 )}
               </div>
-              {e.fields.length > 0 && (
-                <div style={{ fontSize: 11, color: '#999', marginTop: 2, paddingLeft: 0 }}>
-                  → 来源字段：{e.fields.join(', ')}
-                  {e.sqlSnippet && <span> · SQL: {e.sqlSnippet}</span>}
-                </div>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

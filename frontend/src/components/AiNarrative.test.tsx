@@ -153,3 +153,147 @@ describe('AiNarrative enhanced rendering', () => {
     expect(onAsk).toHaveBeenCalledWith('为什么华东订单数下降？')
   })
 })
+
+// --- Phase 5J: Evidence chain progressive disclosure ---
+
+describe('AiNarrative evidence chain (Phase 5J)', () => {
+  const evidenceNarrative = {
+    summary: '测试摘要',
+    keyFindings: ['发现 1'],
+    evidence: [
+      {
+        claim: '华东领先',
+        fields: ['region', 'total_revenue'],
+        value: '¥12.3M',
+        significance: '占比 29.4%',
+        sourceFields: ['r.region', 'r.amount'],
+        calculation: 'SUM(r.amount) GROUP BY region',
+        confidence: 'high' as const,
+        confidenceReason: '数据覆盖 30 天',
+        displayValue: '¥12.3M (29.4%)',
+      },
+      {
+        claim: '华东下降',
+        fields: ['region', 'revenue'],
+        value: '¥5.2M',
+        significance: '环比下降 18.5%',
+        sourceFields: ['r.region', 'r.amount'],
+        calculation: 'SUM(r.amount) GROUP BY region',
+        confidence: 'low' as const,
+        confidenceReason: '数据窗口较窄',
+        displayValue: '¥5.2M (-18.5%)',
+      },
+    ],
+    risks: [],
+    nextQuestions: [],
+  }
+
+  it('renders evidence summary when present', () => {
+    const withSummary = { ...evidenceNarrative, evidenceSummary: '以下结论基于近 30 天 REVENUE 表数据。' }
+    render(<AiNarrative narrative={withSummary} />)
+    expect(screen.getByText(/以下结论基于近 30 天 REVENUE 表数据/)).toBeInTheDocument()
+  })
+
+  it('does not render evidence summary when absent (backward compat)', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    expect(screen.queryByText(/证据来源/)).not.toBeInTheDocument()
+  })
+
+  it('renders evidence with displayValue when present', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    // displayValue renders inside a span with " — " prefix, so use regex
+    expect(screen.getByText(/¥12\.3M.*29\.4%/)).toBeInTheDocument()
+  })
+
+  it('shows "查看证据" button per evidence item', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    const buttons = screen.getAllByText('查看证据 ▼')
+    expect(buttons).toHaveLength(2)
+  })
+
+  it('expands evidence detail on click', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    // After clicking, detail content should be visible
+    // The expanded panel shows "字段：r.region, r.amount（业务名：region, total_revenue）"
+    expect(screen.getByText(/r\.region, r\.amount/)).toBeInTheDocument()
+    expect(screen.getByText(/SUM\(r.amount\) GROUP BY region/)).toBeInTheDocument()
+  })
+
+  it('collapses evidence detail on second click', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    expect(screen.getByText(/r\.region, r\.amount/)).toBeInTheDocument()
+    // After expanding, the button text changes to "收起证据 ▲"
+    fireEvent.click(screen.getByText('收起证据 ▲'))
+    expect(screen.queryByText(/r\.region, r\.amount/)).not.toBeInTheDocument()
+  })
+
+  it('expands only the clicked evidence item', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    // First evidence detail should be visible
+    expect(screen.getByText(/r\.region, r\.amount/)).toBeInTheDocument()
+    expect(screen.getByText(/SUM\(r.amount\) GROUP BY region/)).toBeInTheDocument()
+    // Click second evidence's "查看证据" button (there's still one left)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    // Both should be visible now (independent expand) — two calculation sections
+    const calcTexts = screen.getAllByText(/SUM\(r\.amount\) GROUP BY region/)
+    expect(calcTexts.length).toBe(2)
+  })
+
+  it('shows high confidence indicator in evidence row', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    // ✅ appears for high confidence evidence
+    expect(screen.getAllByText(/✅/).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders old format evidence (no Phase 5J fields) without error', () => {
+    const oldEvidenceNarrative = {
+      summary: '旧格式',
+      keyFindings: [],
+      evidence: [
+        { claim: '旧断言', fields: ['a'] },
+      ],
+      risks: [],
+      nextQuestions: [],
+    }
+    render(<AiNarrative narrative={oldEvidenceNarrative} />)
+    expect(screen.getByText('旧断言')).toBeInTheDocument()
+    // No "查看证据" button for old format evidence without sourceFields
+    expect(screen.queryByText('查看证据')).not.toBeInTheDocument()
+  })
+
+  it('does not crash with empty evidence array', () => {
+    const emptyEvidence = { summary: 's', keyFindings: [], evidence: [], risks: [], nextQuestions: [] }
+    render(<AiNarrative narrative={emptyEvidence} />)
+    expect(screen.getByText(/s/)).toBeInTheDocument()
+  })
+
+  it('shows confidence reason in expanded detail', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    expect(screen.getByText(/数据覆盖 30 天/)).toBeInTheDocument()
+  })
+
+  it('shows calculation in expanded detail', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    expect(screen.getByText(/SUM\(r.amount\) GROUP BY region/)).toBeInTheDocument()
+  })
+
+  it('shows sourceFields in expanded detail', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    fireEvent.click(screen.getAllByText('查看证据 ▼')[0])
+    expect(screen.getByText(/r.region, r.amount/)).toBeInTheDocument()
+  })
+
+  it('renders confidence icon based on confidence level', () => {
+    render(<AiNarrative narrative={evidenceNarrative} />)
+    // "高" for high confidence, "低" for low confidence should appear
+    // The first evidence is high confidence, second is low
+    // Both have display values so both show confidence indicators
+    const highIndicators = screen.getAllByText(/✅/)
+    expect(highIndicators.length).toBeGreaterThanOrEqual(1)
+  })
+})
