@@ -41,6 +41,14 @@ export interface ProcessInsight {
   }>
   analysisStrategy?: string
   contextChain?: string[]
+
+  // Phase 5J:
+  mappingChain?: Array<{
+    step: 'intent' | 'sql_plan' | 'result' | 'conclusion'
+    label: string
+    detail?: string
+    fields?: string[]
+  }>
 }
 
 export interface EvidenceItem {
@@ -49,6 +57,19 @@ export interface EvidenceItem {
   sqlSnippet?: string
   value?: string
   significance?: string
+
+  // Phase 5J: evidence trust & traceability (all optional for backward compat)
+  sourceFields?: string[]
+  calculation?: string
+  confidence?: 'high' | 'medium' | 'low'
+  confidenceReason?: string
+  relatedIntent?: {
+    metrics: string[]
+    dimensions: string[]
+    filters?: string[]
+    timeRange?: string
+  }
+  displayValue?: string
 }
 
 export interface RiskItem {
@@ -103,6 +124,9 @@ export interface AiInsightNarrative {
   nextQuestions: Array<string | NextQuestion>
   // Phase 5H additions:
   conclusion?: string
+
+  // Phase 5J:
+  evidenceSummary?: string
 }
 
 export interface AiAskResponse {

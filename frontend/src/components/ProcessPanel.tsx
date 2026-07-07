@@ -12,11 +12,16 @@ interface ProcessPanelProps {
 const ProcessPanel: React.FC<ProcessPanelProps> = ({ process }) => {
   const [expanded, setExpanded] = useState(false)
 
+  // Normalize optional arrays so downstream code never hits optional chaining issues
+  const mappingChain = process.mappingChain ?? []
+  const contextChain = process.contextChain ?? []
+
   const hasContent = process.understoodMetrics.length > 0
     || process.understoodDimensions.length > 0
     || process.semanticGaps.length > 0
     || process.analysisStrategy
-    || (process.contextChain && process.contextChain.length > 0)
+    || contextChain.length > 0
+    || mappingChain.length > 0
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -83,11 +88,51 @@ const ProcessPanel: React.FC<ProcessPanelProps> = ({ process }) => {
               )}
 
               {/* Context chain */}
-              {process.contextChain && process.contextChain.length > 0 && (
+              {contextChain.length > 0 && (
                 <div>
                   <Text style={{ color: '#666', fontSize: 12 }}>🔗 对话链路：</Text>
                   <div style={{ paddingLeft: 12, color: '#555' }}>
-                    {process.contextChain.join(' → ')}
+                    {contextChain.join(' → ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Phase 5J: mappingChain */}
+              {mappingChain.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <Text style={{ color: '#4E7BF5', fontSize: 12 }}>📋 分析链路：</Text>
+                  <div style={{
+                    padding: '8px 12px', background: '#f0f5ff', borderRadius: 6,
+                    marginTop: 4, border: '1px solid #d6e4ff',
+                  }}>
+                    {mappingChain.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, position: 'relative' }}>
+                        <div style={{
+                          width: 20, height: 20, borderRadius: '50%', background: '#4E7BF5',
+                          color: '#fff', fontSize: 11, display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', flexShrink: 0, marginTop: 1,
+                        }}>
+                          {i + 1}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#333', fontSize: 12, fontWeight: 500 }}>{item.label}</div>
+                          {item.detail && (
+                            <div style={{ color: '#666', fontSize: 11 }}>{item.detail}</div>
+                          )}
+                          {item.fields && item.fields.length > 0 && (
+                            <div style={{ color: '#999', fontSize: 10, marginTop: 1 }}>
+                              {item.fields.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                        {i < mappingChain.length - 1 && (
+                          <div style={{
+                            position: 'absolute', left: 9, top: 22, bottom: -4,
+                            width: 1, background: '#d6e4ff',
+                          }} />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
