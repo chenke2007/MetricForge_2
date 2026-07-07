@@ -90,18 +90,18 @@ describe('AskInput', () => {
     const onSend = vi.fn()
     render(<AskInput onSend={onSend} />)
     const textarea = screen.getByPlaceholderText(/用自然语言描述/)
-    const base = 'a'.repeat(500)
+    const base = 'a'.repeat(1000)
     fireEvent.change(textarea, { target: { value: `  ${base}  ` } })
     fireEvent.click(screen.getByText('问数'))
     expect(onSend).toHaveBeenCalledWith(base)
-    expect(screen.queryByText(/缩短到 500 字以内/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/缩短到 1000 字以内/)).not.toBeInTheDocument()
   })
 
   it('shows TOO_LONG when trimmed content exceeds max length', () => {
     render(<AskInput onSend={() => {}} />)
     const textarea = screen.getByPlaceholderText(/用自然语言描述/)
-    fireEvent.change(textarea, { target: { value: `  ${'a'.repeat(501)}  ` } })
-    expect(screen.getByText(/缩短到 500 字以内/)).toBeInTheDocument()
+    fireEvent.change(textarea, { target: { value: `  ${'a'.repeat(1001)}  ` } })
+    expect(screen.getByText(/缩短到 1000 字以内/)).toBeInTheDocument()
   })
 
   it('shows real-time error for punctuation-only input', () => {
@@ -114,8 +114,8 @@ describe('AskInput', () => {
   it('shows real-time error for too-long input', () => {
     render(<AskInput onSend={() => {}} />)
     const textarea = screen.getByPlaceholderText(/用自然语言描述/)
-    fireEvent.change(textarea, { target: { value: 'a'.repeat(501) } })
-    expect(screen.getByText(/缩短到 500 字以内/)).toBeInTheDocument()
+    fireEvent.change(textarea, { target: { value: 'a'.repeat(1001) } })
+    expect(screen.getByText(/缩短到 1000 字以内/)).toBeInTheDocument()
   })
 
   it('shows real-time error for input with invalid control characters', () => {
