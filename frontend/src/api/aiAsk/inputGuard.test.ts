@@ -38,12 +38,12 @@ describe('validateAiAskInput', () => {
     expect(result.error?.code).toBe('EMPTY_INPUT')
   })
 
-  it('returns TOO_LONG for 501 characters', () => {
+  it('returns TOO_LONG for 1001 characters', () => {
     const result = validateAiAskInput('a'.repeat(MAX_INPUT_LENGTH + 1))
     expect(result.error?.code).toBe('TOO_LONG')
   })
 
-  it('accepts exactly 500 characters', () => {
+  it('accepts exactly 1000 characters', () => {
     const result = validateAiAskInput('a'.repeat(MAX_INPUT_LENGTH))
     expect(result.valid).toBe(true)
   })

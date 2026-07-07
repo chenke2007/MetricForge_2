@@ -14,7 +14,7 @@ export type InputGuardErrorCode =
   | 'TOO_LONG'
   | 'INVALID_CHARS'
 
-export const MAX_INPUT_LENGTH = 500
+export const MAX_INPUT_LENGTH = 1000
 
 function containsInvalidControlChars(input: string): boolean {
   for (const ch of input) {
@@ -54,7 +54,7 @@ export function validateAiAskInput(question: string): InputValidationResult {
   if (question.length > MAX_INPUT_LENGTH) {
     return {
       valid: false,
-      error: { code: 'TOO_LONG', message: '问题过长，请缩短到 500 字以内' },
+      error: { code: 'TOO_LONG', message: '问题过长，请缩短到 1000 字以内' },
     }
   }
 

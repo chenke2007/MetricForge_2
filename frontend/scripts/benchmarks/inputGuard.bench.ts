@@ -12,9 +12,9 @@ interface InputGuardCase {
 const TEST_CASES: InputGuardCase[] = [
   { input: '', label: '空字符串', expectedValid: false, expectedCode: 'EMPTY_INPUT' },
   { input: '   ', label: '纯空格', expectedValid: false, expectedCode: 'EMPTY_INPUT' },
-  { input: '你好'.repeat(250), label: '刚好 500 字符', expectedValid: true },
-  { input: '你好'.repeat(251), label: '超 1 个字符（502）', expectedValid: false, expectedCode: 'TOO_LONG' },
-  { input: '1'.repeat(1000), label: '1000 字符超长', expectedValid: false, expectedCode: 'TOO_LONG' },
+  { input: '你好'.repeat(500), label: '刚好 1000 字符（中文）', expectedValid: true },
+  { input: '1'.repeat(1001), label: '超 1 个字符（1001）', expectedValid: false, expectedCode: 'TOO_LONG' },
+  { input: '1'.repeat(1000), label: '刚好 1000 字符（ASCII）', expectedValid: true },
   { input: '，，，', label: '中文标点', expectedValid: false, expectedCode: 'PUNCTUATION_ONLY' },
   { input: '!@#$%^&*()_+', label: '英文符号', expectedValid: false, expectedCode: 'PUNCTUATION_ONLY' },
   { input: '\n\t\n', label: '仅换行与制表符', expectedValid: false, expectedCode: 'EMPTY_INPUT' },
