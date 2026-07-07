@@ -345,7 +345,7 @@ export type LlmResponseFaultType =
   | 'incomplete_narrative'          // narrative.summary / evidence 为空
   | 'incomplete_evidence'           // evidence 中 claim / fields 缺失
   | 'invalid_followup_confidence'   // followUp.confidence 为非法值
-  | 'missing_sql_plan_tables'       // sqlPlan.tables / fields 为空
+  | 'missing_sql_plan_tables'       // 删除 sqlPlan.tables / fields，或改为非数组值，触发 validator error
   | 'semantic_gap_conflict'         // semantic gap 与 intent 冲突（如 gap.field 出现在 intent.metrics）
   | 'empty_response'                // response 为 null
   | 'unparseable_response'          // response 为非对象 / 含循环结构模拟
@@ -513,7 +513,7 @@ Phase 5K **默认不引入 zod**。原因：
 
 1. 选择一个干净的 scenario response 作为 base。
 2. 对每个 `LlmResponseFaultType`（除 `timeout` 外）调用 `simulateLlmFault` + `validateAiAskResponse`。
-3. 断言 validator 返回 `valid: false` 或至少包含预期 warning/error path。
+3. 断言 validator 返回 `valid: false`，且 `errors` 包含预期的 path（例如 `missing_sql_plan_tables` 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，而不是仅 warning）。
 4. 对 `timeout` 直接断言 `MockAdapter` 抛出 `new AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')`。
 
 输出：`ModuleReport`。
@@ -664,7 +664,7 @@ python -m pytest tests/ -q            # 后端 0 改动，仍需 299 passed
 | `incomplete_narrative` | narrative.summary / evidence 为空 |
 | `incomplete_evidence` | evidence 中 claim / fields 缺失 |
 | `invalid_followup_confidence` | followUp.confidence 非法 |
-| `missing_sql_plan_tables` | sqlPlan.tables / fields 为空 |
+| `missing_sql_plan_tables` | 删除 sqlPlan.tables / fields，或改为非数组值，触发 validator error |
 | `semantic_gap_conflict` | gap.field 与 intent.metrics 冲突 |
 | `empty_response` | response 为 null |
 | `unparseable_response` | response 为非对象 |
