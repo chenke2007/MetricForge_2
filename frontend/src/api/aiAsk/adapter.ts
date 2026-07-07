@@ -14,6 +14,7 @@ export interface AiAskContext {
     mockDelay?: [number, number]
     mockFailureRate?: number
     forceFollowUpType?: import('../../types/aiAsk').FollowUpType
+    simulateResponseFault?: import('./promptSimulation').LlmResponseFaultType
   }
 }
 

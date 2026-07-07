@@ -4,6 +4,7 @@ import type { AiAskResponse, AiChartSpec } from '../../types/aiAsk'
 import type { FollowUpType } from '../../types/aiAsk'
 import { AiAskError } from './errors'
 import { validateAiAskResponse } from './validator'
+import { simulateLlmFault } from './promptSimulation'
 import { MOCK_SCENARIOS } from './scenarios'
 import type { MockScenario } from './scenarios'
 import { recommendCharts } from './recommendation'
@@ -90,6 +91,23 @@ export class MockAdapter implements AiAskAdapter {
       response.contextSummary = `基于上一轮 "${previousResponse.question}" 继续分析`
     }
 
+    // Fault injection (Phase 5K): only trigger when explicitly requested.
+    const fault = context.options?.simulateResponseFault
+    if (fault) {
+      if (fault === 'timeout') {
+        throw new AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')
+      }
+      const simulated = simulateLlmFault(response, fault) as AiAskResponse
+      const validation = validateAiAskResponse(simulated)
+      if (!validation.valid) {
+        throw new AiAskError('Mock adapter produced invalid follow-up response', 'INVALID_RESPONSE', {
+          errors: validation.errors,
+          simulatedFault: fault,
+        })
+      }
+      return simulated
+    }
+
     // Validate
     const validation = validateAiAskResponse(response)
     if (!validation.valid) {
@@ -162,6 +180,23 @@ export class MockAdapter implements AiAskAdapter {
     }
 
     response.chartSuggestions = recommended
+
+    // Fault injection (Phase 5K): only trigger when explicitly requested.
+    const fault = context.options?.simulateResponseFault
+    if (fault) {
+      if (fault === 'timeout') {
+        throw new AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')
+      }
+      const simulated = simulateLlmFault(response, fault) as AiAskResponse
+      const validation = validateAiAskResponse(simulated)
+      if (!validation.valid) {
+        throw new AiAskError('Mock adapter produced invalid response', 'INVALID_RESPONSE', {
+          errors: validation.errors,
+          simulatedFault: fault,
+        })
+      }
+      return simulated
+    }
 
     // validate
     const validation = validateAiAskResponse(response)

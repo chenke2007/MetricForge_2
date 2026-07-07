@@ -1,6 +1,8 @@
 // frontend/src/api/aiAsk/mockAdapter.test.ts
 import { describe, it, expect } from 'vitest'
 import { MockAdapter } from './mockAdapter'
+import { AiAskError } from './errors'
+import { validateAiAskResponse } from './validator'
 import type { AiAskContext } from './adapter'
 import type { AiAskResponse } from '../../types/aiAsk'
 
@@ -170,6 +172,100 @@ describe('MockAdapter', () => {
       expect(resp.followUp).toBeUndefined()
       expect(resp.contextSummary).toBeUndefined()
       expect(resp.narrative.conclusion).toBeUndefined()
+    })
+  })
+
+  // --- Phase 5K: Fault injection tests ---
+
+  describe('simulateResponseFault injection', () => {
+    it('throws INVALID_RESPONSE for missing_top_level_fields', async () => {
+      try {
+        await adapter.analyze('各区域销售额', {
+          datasourceId: null, datasourceName: null, selectedTables: [],
+          options: { simulateResponseFault: 'missing_top_level_fields' },
+        })
+        expect.fail('expected AiAskError to be thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiAskError)
+        const error = err as AiAskError
+        expect(error.code).toBe('INVALID_RESPONSE')
+        expect(error.details?.simulatedFault).toBe('missing_top_level_fields')
+        expect(error.details?.errors).toBeDefined()
+      }
+    })
+
+    it('throws INVALID_RESPONSE for empty_response', async () => {
+      try {
+        await adapter.analyze('各区域销售额', {
+          datasourceId: null, datasourceName: null, selectedTables: [],
+          options: { simulateResponseFault: 'empty_response' },
+        })
+        expect.fail('expected AiAskError to be thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiAskError)
+        const error = err as AiAskError
+        expect(error.code).toBe('INVALID_RESPONSE')
+        expect(error.details?.simulatedFault).toBe('empty_response')
+      }
+    })
+
+    it('throws ANALYSIS_TIMEOUT for timeout fault', async () => {
+      try {
+        await adapter.analyze('各区域销售额', {
+          datasourceId: null, datasourceName: null, selectedTables: [],
+          options: { simulateResponseFault: 'timeout' },
+        })
+        expect.fail('expected AiAskError to be thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiAskError)
+        const error = err as AiAskError
+        expect(error.code).toBe('ANALYSIS_TIMEOUT')
+      }
+    })
+
+    it('returns response without throwing for semantic_gap_conflict', async () => {
+      const resp = await adapter.analyze('各区域销售额', {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+        options: { simulateResponseFault: 'semantic_gap_conflict' },
+      })
+      expect(resp).toBeDefined()
+      expect(resp.semanticGaps[0].field).toBe('销售额')
+      const validation = validateAiAskResponse(resp)
+      expect(validation.valid).toBe(true)
+      expect(validation.errors).toHaveLength(0)
+      expect(validation.warnings.some((w) => w.includes('冲突'))).toBe(true)
+    })
+
+    it('returns normal response when simulateResponseFault is absent', async () => {
+      const resp = await adapter.analyze('各区域销售额', {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+      })
+      expect(resp).toBeDefined()
+      expect(resp.chartSuggestions.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('follow-up path throws INVALID_RESPONSE with simulatedFault detail', async () => {
+      const prev = await adapter.analyze('各区域销售额', {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+      })
+      const context: AiAskContext = {
+        datasourceId: null, datasourceName: null, selectedTables: [],
+        messageHistory: [
+          { role: 'user', content: '各区域销售额' },
+          { role: 'assistant', content: '各区域销售额分析结果', responseJson: prev as any },
+        ],
+        options: { simulateResponseFault: 'missing_top_level_fields' },
+      }
+      try {
+        await adapter.analyze('为什么华东最高', context)
+        expect.fail('expected AiAskError to be thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiAskError)
+        const error = err as AiAskError
+        expect(error.code).toBe('INVALID_RESPONSE')
+        expect(error.details?.simulatedFault).toBe('missing_top_level_fields')
+        expect(error.message).toContain('follow-up')
+      }
     })
   })
 })
