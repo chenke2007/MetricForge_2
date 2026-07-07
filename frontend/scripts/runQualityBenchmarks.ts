@@ -7,6 +7,8 @@ import { runContextPolicyBenchmark } from './benchmarks/contextPolicy.bench'
 import { runFollowUpBenchmark } from './benchmarks/followUpDetector.bench'
 import { runAdapterBenchmark } from './benchmarks/adapter.bench'
 import { runEvidenceQualityBenchmark } from './benchmarks/evidenceQuality.bench'
+import { runAdapterContractBenchmark } from './benchmarks/adapterContract.bench'
+import { runPromptSimulationBenchmark } from './benchmarks/promptSimulation.bench'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -41,6 +43,8 @@ export interface QualityBenchmarkReport {
     followUpDetector: ModuleReport
     adapter: ModuleReport
     evidenceQuality: ModuleReport
+    adapterContract: ModuleReport
+    promptSimulation: ModuleReport
   }
 }
 
@@ -58,15 +62,17 @@ async function main(): Promise<void> {
 
   console.log('Running quality benchmarks...\n')
 
-  const [inputGuard, contextPolicy, followUpDetector, adapter, evidenceQuality] = await Promise.all([
+  const [inputGuard, contextPolicy, followUpDetector, adapter, evidenceQuality, adapterContract, promptSimulation] = await Promise.all([
     runInputGuardBenchmark(),
     runContextPolicyBenchmark(),
     runFollowUpBenchmark(),
     runAdapterBenchmark(),
     runEvidenceQualityBenchmark(),
+    runAdapterContractBenchmark(),
+    runPromptSimulationBenchmark(),
   ])
 
-  const modules = { inputGuard, contextPolicy, followUpDetector, adapter, evidenceQuality }
+  const modules = { inputGuard, contextPolicy, followUpDetector, adapter, evidenceQuality, adapterContract, promptSimulation }
   const summary = computeSummary(modules)
 
   const report: QualityBenchmarkReport = {
