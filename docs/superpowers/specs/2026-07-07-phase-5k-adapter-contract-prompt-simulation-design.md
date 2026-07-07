@@ -512,9 +512,11 @@ Phase 5K **默认不引入 zod**。原因：
 测试内容：
 
 1. 选择一个干净的 scenario response 作为 base。
-2. 对每个 `LlmResponseFaultType`（除 `timeout` 外）调用 `simulateLlmFault` + `validateAiAskResponse`。
-3. 断言 validator 返回 `valid: false`，且 `errors` 包含预期的 path（例如 `missing_sql_plan_tables` 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，而不是仅 warning）。
-4. 对 `timeout` 直接断言 `MockAdapter` 抛出 `new AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')`。
+2. 按 fault 类型分组断言：
+   - **contract-breaking faults**（`missing_top_level_fields`、`wrong_field_types`、`incomplete_narrative`、`incomplete_evidence`、`invalid_followup_confidence`、`missing_sql_plan_tables`、`empty_response`、`unparseable_response`）：调用 `simulateLlmFault` + `validateAiAskResponse`，断言 `valid === false`，且 `errors` 包含预期的 path。
+   - **`missing_sql_plan_tables`** 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，而不是仅 warning。
+   - **warning-only fault `semantic_gap_conflict`**：断言 `valid === true`，且 `warnings` 包含“冲突”。
+   - **`timeout`**：直接断言 `MockAdapter` 抛出 `new AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')`。
 
 输出：`ModuleReport`。
 

@@ -220,7 +220,8 @@ feat(phase-5k): harden ai ask response validator contract
   - `timeout`：返回 `baseResponse` 的深拷贝，不破坏原始对象，也不产生 invalid response；timeout 的错误路径只在 `MockAdapter` 中处理。
 
 **变更点（promptSimulation.test.ts）：**
-- 对每个 fault type（除 `timeout`）测试 `simulateLlmFault` 返回的值与 `baseResponse` 不同，且经 `validateAiAskResponse` 后产生预期的 error path（例如 `missing_sql_plan_tables` 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，不能仅产生 warning）。
+- 对 contract-breaking fault type（`missing_top_level_fields`、`wrong_field_types`、`incomplete_narrative`、`incomplete_evidence`、`invalid_followup_confidence`、`missing_sql_plan_tables`、`empty_response`、`unparseable_response`）测试 `simulateLlmFault` 返回的值与 `baseResponse` 不同，且经 `validateAiAskResponse` 后 `valid === false` 并产生预期的 error path（例如 `missing_sql_plan_tables` 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，不能仅产生 warning）。
+- 对 warning-only fault `semantic_gap_conflict` 测试 `valid === true`、`errors.length === 0`，且 `warnings` 包含“冲突”。
 - 对 `timeout` 测试 `simulateLlmFault(baseResponse, 'timeout')` 返回 `baseResponse` 的深拷贝，且原始 `baseResponse` 未被修改。
 - timeout 对应的 `AiAskError('模拟分析超时', 'ANALYSIS_TIMEOUT')` 抛出测试放在 `mockAdapter.test.ts`。
 - 不测试 `ProcessInsight.mappingChain`。
@@ -337,12 +338,16 @@ feat(phase-5k): wire prompt simulation into MockAdapter via options
 
 **变更点（promptSimulation.bench.ts）：**
 - 选择一个干净 scenario response 作为 `baseResponse`。
-- 对每个 `LlmResponseFaultType`（除 `timeout`）：
-  - 调用 `simulateLlmFault(baseResponse, fault)` + `validateAiAskResponse`。
-  - 断言 `valid === false`，且 `errors` 包含预期的 path（例如 `missing_sql_plan_tables` 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，而不是仅 warning）。
-- 对 `timeout`：
-  - 使用 `MockAdapter.analyze` 并设置 `options: { simulateResponseFault: 'timeout' }`。
-  - 断言抛出 `AiAskError` 且 `code === 'ANALYSIS_TIMEOUT'`。
+- 按 fault 分组断言：
+  - **error faults**（`missing_top_level_fields`、`wrong_field_types`、`incomplete_narrative`、`incomplete_evidence`、`invalid_followup_confidence`、`missing_sql_plan_tables`、`empty_response`、`unparseable_response`）：
+    - 调用 `simulateLlmFault(baseResponse, fault)` + `validateAiAskResponse`。
+    - 断言 `valid === false`，且 `errors` 包含预期的 path。
+  - **`missing_sql_plan_tables`** 必须触发 `sqlPlan.tables` 或 `sqlPlan.fields` 的 error，而不是仅 warning。
+  - **warning-only fault `semantic_gap_conflict`**：
+    - 断言 `valid === true`，且 `warnings` 包含“冲突”。
+  - **`timeout`**：
+    - 使用 `MockAdapter.analyze` 并设置 `options: { simulateResponseFault: 'timeout' }`。
+    - 断言抛出 `AiAskError` 且 `code === 'ANALYSIS_TIMEOUT'`。
 - 返回 `ModuleReport`。
 
 **变更点（runQualityBenchmarks.ts）：**

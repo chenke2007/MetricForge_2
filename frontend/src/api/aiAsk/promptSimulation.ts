@@ -91,6 +91,9 @@ export function simulateLlmFault(
     }
 
     case 'semantic_gap_conflict': {
+      // Warning-only fault: the response still satisfies the TypeScript contract,
+      // but validator will flag the semantic inconsistency between intent.metrics
+      // and semanticGaps.field.
       const clone = deepClone(baseResponse)
       clone.intent.metrics = ['销售额']
       clone.semanticGaps = [{ field: '销售额', reason: 'not_found' }]

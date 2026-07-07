@@ -127,6 +127,8 @@ describe('simulateLlmFault', () => {
 
   it('semantic_gap_conflict: triggers validator warning about conflict with intent.metrics', () => {
     const result = validateAiAskResponse(simulateLlmFault(validResponse, 'semantic_gap_conflict'))
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
     expect(result.warnings.some((w) => w.includes('冲突'))).toBe(true)
   })
 
