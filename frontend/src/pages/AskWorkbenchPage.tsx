@@ -137,6 +137,12 @@ const AskWorkbenchPage: React.FC = () => {
       return
     }
 
+    // Phase 5L: Block analyze in real LLM mode when datasource is missing
+    if (useRealLlm && (!datasourceId || !datasourceName)) {
+      setError(new AiAskError('请先选择数据源', 'UNKNOWN'))
+      return
+    }
+
     // Use adapter
     clearError()
     setAdapterName(adapter.name)
@@ -207,7 +213,7 @@ const AskWorkbenchPage: React.FC = () => {
     currentSessionId, createSession, setCurrentSession,
     createMessage, datasourceId, datasourceName, selectedTables,
     adapter, clearError, setAdapterName, setAnalyzing, setAnalysisStep,
-    setResponseValidation, setCurrentResponse, setError,
+    setResponseValidation, setCurrentResponse, setError, useRealLlm,
   ])
 
   const handleOpenInWorkbench = useCallback((sql: string, dsId: number) => {
@@ -403,8 +409,12 @@ const AskWorkbenchPage: React.FC = () => {
                   style={{ borderRadius: 8, marginBottom: 12 }}
                   message={
                     <div>
-                      <div style={{ fontWeight: 500, marginBottom: 4 }}>分析异常</div>
-                      <div style={{ fontSize: 12 }}>{getAiAskErrorMessage(storeError.code)}</div>
+                      <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                        {storeError.code === 'UNKNOWN' && storeError.message === '请先选择数据源'
+                          ? '配置不足'
+                          : '分析异常'}
+                      </div>
+                      <div style={{ fontSize: 12 }}>{storeError.message || getAiAskErrorMessage(storeError.code)}</div>
                       {useRealLlm && (
                         <Space style={{ marginTop: 6 }}>
                           <Button size="small" onClick={() => { setUseRealLlm(false); clearError() }}>

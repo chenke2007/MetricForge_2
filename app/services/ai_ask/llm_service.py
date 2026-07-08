@@ -31,6 +31,7 @@ class AiAskLlmService:
         prompt = AiAskPromptBuilder.build(request)
         messages = [
             {"role": "system", "content": prompt},
+            {"role": "user", "content": request["question"]},
         ]
 
         try:

@@ -165,6 +165,52 @@ describe('RealLlmAdapter', () => {
     })
   })
 
+  it('throws INVALID_RESPONSE for HTTP 422 with detail array', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        detail: [
+          { msg: 'field required', loc: ['body', 'question'] },
+        ],
+      }),
+    })
+
+    const adapter = RealLlmAdapter.create()
+    await expect(
+      adapter.analyze('q', {
+        datasourceId: null as any,
+        datasourceName: null as any,
+        selectedTables: [],
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('请求参数校验失败'),
+    })
+  })
+
+  it('throws INVALID_RESPONSE for HTTP 422 with string detail', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        detail: 'datasource_id is required',
+      }),
+    })
+
+    const adapter = RealLlmAdapter.create()
+    await expect(
+      adapter.analyze('q', {
+        datasourceId: undefined as any,
+        datasourceName: undefined as any,
+        selectedTables: [],
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('请求参数校验失败'),
+    })
+  })
+
   it('handles non-object body gracefully', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

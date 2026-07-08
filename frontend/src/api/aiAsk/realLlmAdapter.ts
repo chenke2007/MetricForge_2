@@ -54,6 +54,20 @@ export class RealLlmAdapter implements AiAskAdapter {
       const errBody = (body && typeof body === 'object' && !Array.isArray(body)
         ? body
         : {}) as Record<string, unknown>
+
+      // Phase 5L: Map HTTP 422 (validation error) to a friendlier code
+      if (resp.status === 422) {
+        const detail = errBody.detail
+        const detailMsg = Array.isArray(detail)
+          ? (detail as any[]).map((d: any) => d.msg ?? String(d)).join('; ')
+          : String(detail ?? '')
+        throw new AiAskError(
+          `请求参数校验失败：${detailMsg || '请检查数据源选择是否完整'}`,
+          'INVALID_RESPONSE',
+          { status: 422, detail: detailMsg },
+        )
+      }
+
       throw new AiAskError(
         String(errBody.errorMessage ?? `AI 问数服务错误（HTTP ${resp.status}）`),
         (errBody.errorCode as any) ?? 'UNKNOWN',

@@ -245,6 +245,34 @@ def test_analyze_returns_success_for_valid_llm_response(mock_decrypt, mock_opena
 
 @patch("app.services.ai_ask.llm_service.OpenAI")
 @patch("app.services.ai_ask.llm_service.decrypt")
+def test_analyze_sends_system_and_user_messages(mock_decrypt, mock_openai_cls):
+    mock_decrypt.return_value = "plain-api-key"
+    db = _mock_db_with_active(active=_make_active_setting())
+
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content='{"question": "各区域销售额排名", "intent": {"metrics": ["销售额"], "dimensions": ["区域"], "filters": []}, "sqlPlan": {"datasourceId": 1, "datasourceName": "示例数据源", "sql": "SELECT region, SUM(amount) FROM sales GROUP BY region", "tables": ["sales"], "fields": ["region", "amount"], "assumptions": [], "safetyWarnings": []}, "resultSummary": {"rowCount": 5, "durationMs": 100}, "chartSuggestions": [{"title": "销售额排名", "chartType": "bar", "yFields": ["销售额"], "rationale": "...", "limitations": []}], "narrative": {"summary": "...", "keyFindings": [], "evidence": [{"claim": "...", "fields": ["区域"]}], "risks": [], "nextQuestions": []}, "semanticGaps": []}'))]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_completion
+    mock_openai_cls.return_value = mock_client
+
+    svc = AiAskLlmService()
+    request = make_request()
+    result = svc.analyze(request, db=db)
+    assert result.ok is True
+
+    # Assert messages sent to OpenAI contain both system and user roles
+    create_call = mock_client.chat.completions.create
+    messages_arg = create_call.call_args[1]["messages"]
+    roles = [m["role"] for m in messages_arg]
+    assert "system" in roles
+    assert "user" in roles
+    # Assert user content equals the original question
+    user_msg = next(m for m in messages_arg if m["role"] == "user")
+    assert user_msg["content"] == "各区域销售额排名"
+
+
+@patch("app.services.ai_ask.llm_service.OpenAI")
+@patch("app.services.ai_ask.llm_service.decrypt")
 def test_analyze_returns_invalid_response_for_bad_json(mock_decrypt, mock_openai_cls):
     mock_decrypt.return_value = "plain-api-key"
     db = _mock_db_with_active(active=_make_active_setting())
