@@ -55,22 +55,35 @@ class ResolvedTableMetadata:
 class MetadataResolver:
     """元数据解析器，从已采集的元数据中查询表和字段结构。"""
 
-    # 正则：SCHEMA.TABLE — 全大写字母数字下划线
-    SCHEMA_TABLE_PATTERN = re.compile(r'[A-Z][A-Z0-9_]+\.[A-Z][A-Z0-9_]+')
+    # 正则：SCHEMA.TABLE — 大小写混合字母数字下划线，返回值统一大写
+    SCHEMA_TABLE_PATTERN = re.compile(
+        r'[A-Za-z][A-Za-z0-9_]+\.[A-Za-z][A-Za-z0-9_]+',
+        re.IGNORECASE,
+    )
 
     @staticmethod
     def extract_tables_from_question(question: str) -> list[str]:
         """从问题文本中提取 schema.table 格式的表引用。
 
+        返回值统一 normalize 为大写，去重。
+
         Args:
             question: 用户问题文本
 
         Returns:
-            提取到的 schema.table 字符串列表
+            提取到的 schema.table 字符串列表（全部大写）
         """
         if not question:
             return []
-        return MetadataResolver.SCHEMA_TABLE_PATTERN.findall(question)
+        # 去重但保持顺序
+        seen: set[str] = set()
+        result: list[str] = []
+        for match in MetadataResolver.SCHEMA_TABLE_PATTERN.finditer(question):
+            upper = match.group(0).upper()
+            if upper not in seen:
+                seen.add(upper)
+                result.append(upper)
+        return result
 
     @staticmethod
     def resolve(
@@ -142,30 +155,34 @@ class MetadataResolver:
     ) -> ResolvedTableMetadata | None:
         """查询单表的元数据。
 
-        先尝试 schema_name.table_name 精确匹配，
-        如果 schema_name 为 None 或未匹配到，则按 table_name 模糊匹配。
+        查询前将 schema_name / table_name 统一 normalize 为大写。
+
+        规则：
+        - 如果传入了 schema_name，只做 schema + table 精确匹配。
+          schema 不匹配时直接返回 None，不允许 fallback 到 table_name-only 查询。
+        - 只有 schema_name 为 None（用户未指定 schema）时，
+          才允许按 table_name 匹配（可能返回所属 schema）。
         """
-        table_meta: TableMetadata | None = None
+        table_upper = table_name.upper()
 
         if schema_name:
+            schema_upper = schema_name.upper()
             table_meta = (
                 db.query(TableMetadata)
                 .filter(
                     TableMetadata.datasource_id == datasource_id,
-                    TableMetadata.schema_name == schema_name,
-                    TableMetadata.table_name == table_name,
+                    TableMetadata.schema_name == schema_upper,
+                    TableMetadata.table_name == table_upper,
                     TableMetadata.is_active == True,
                 )
                 .first()
             )
-
-        # 如果 schema 精确匹配失败，或不带 schema，按 table_name 匹配
-        if table_meta is None:
+        else:
             table_meta = (
                 db.query(TableMetadata)
                 .filter(
                     TableMetadata.datasource_id == datasource_id,
-                    TableMetadata.table_name == table_name,
+                    TableMetadata.table_name == table_upper,
                     TableMetadata.is_active == True,
                 )
                 .first()

@@ -134,12 +134,18 @@ class TestExtractTablesFromQuestion:
         result = MetadataResolver.extract_tables_from_question("")
         assert result == []
 
-    def test_extract_ignores_lowercase(self):
-        # Pattern only matches uppercase, so lowercase should be ignored
+    def test_extract_lowercase_normalized_to_uppercase(self):
+        # lowercase input should be normalized to uppercase
         result = MetadataResolver.extract_tables_from_question(
-            "select amt from dwhrpt.dws_table"
+            "select amt from dwhrpt.dws_rpt_zcpz_cyfl_tf_m"
         )
-        assert result == []
+        assert result == ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"]
+
+    def test_extract_mixed_case_normalized_to_uppercase(self):
+        result = MetadataResolver.extract_tables_from_question(
+            "查询 DwhRpt.Dws_Rpt_Zcpz_Cyfl_Tf_M 的投放金额"
+        )
+        assert result == ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"]
 
 
 class TestResolveWithExactSchema:
@@ -206,6 +212,28 @@ class TestResolveWithExactSchema:
         amt_col = next(c for c in result[0].columns if c.column_name == "amt")
         assert amt_col.is_partition is False
 
+    def test_wrong_schema_returns_empty_no_fallback(self, db_session, seed_dwhrpt_snapshot):
+        """WRONG.DWS_RPT_ZCPZ_CYFL_TF_M must NOT fallback to table-only match.
+        Even though DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M exists, wrong schema → empty."""
+        result = MetadataResolver.resolve(
+            datasource_id=2,
+            table_names=["WRONG.DWS_RPT_ZCPZ_CYFL_TF_M"],
+            db=db_session,
+        )
+        assert result == []
+
+    def test_uppercase_normalized_exact_schema_match(self, db_session, seed_dwhrpt_snapshot):
+        """dwhrpt.dws_rpt_zcpz_cyfl_tf_m (lowercase input) should normalize
+        and match DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M."""
+        result = MetadataResolver.resolve(
+            datasource_id=2,
+            table_names=["dwhrpt.dws_rpt_zcpz_cyfl_tf_m"],
+            db=db_session,
+        )
+        assert len(result) == 1
+        assert result[0].schema_name == "DWHRPT"
+        assert result[0].table_name == "DWS_RPT_ZCPZ_CYFL_TF_M"
+
 
 class TestResolveWithTableNameOnly:
     def test_resolve_table_name_only(self, db_session, seed_dwhrpt_snapshot):
@@ -228,6 +256,18 @@ class TestResolveFromQuestion:
             db=db_session,
         )
         assert len(result) == 1
+        assert result[0].table_name == "DWS_RPT_ZCPZ_CYFL_TF_M"
+
+    def test_resolve_question_lowercase_normalizes(self, db_session, seed_dwhrpt_snapshot):
+        """Lowercase schema.table in question is normalized to uppercase."""
+        result = MetadataResolver.resolve(
+            datasource_id=2,
+            table_names=[],
+            question="查询 dwhrpt.dws_rpt_zcpz_cyfl_tf_m 每月的投放金额",
+            db=db_session,
+        )
+        assert len(result) == 1
+        assert result[0].schema_name == "DWHRPT"
         assert result[0].table_name == "DWS_RPT_ZCPZ_CYFL_TF_M"
 
     def test_resolve_question_only_no_selected_tables(self, db_session, seed_dwhrpt_snapshot):
