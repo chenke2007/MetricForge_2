@@ -22,6 +22,9 @@ interface AiAskStore {
   responseValidation: ValidationResult | null
   error: AiAskError | null
 
+  // Phase 5L: Real LLM toggle
+  useRealLlm: boolean
+
   // 历史轮次产物 (key: assistant message id)
   responseHistory: Record<number, AiAskResponse>
 
@@ -37,6 +40,7 @@ interface AiAskStore {
   setResponseValidation: (v: ValidationResult | null) => void
   setError: (error: AiAskError | null) => void
   clearError: () => void
+  setUseRealLlm: (v: boolean) => void
   saveResponseForMessage: (messageId: number, resp: AiAskResponse) => void
   getResponseForMessage: (messageId: number) => AiAskResponse | undefined
   reset: () => void
@@ -56,6 +60,8 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
   responseValidation: null,
   error: null,
 
+  useRealLlm: false,
+
   responseHistory: {},
 
   setDatasource: (id, name) => set({ datasourceId: id, datasourceName: name }),
@@ -69,6 +75,7 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
   setResponseValidation: (v) => set({ responseValidation: v }),
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
+  setUseRealLlm: (v) => set({ useRealLlm: v }),
   saveResponseForMessage: (messageId, resp) =>
     set((state) => ({
       responseHistory: { ...state.responseHistory, [messageId]: resp },
@@ -87,5 +94,6 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
       adapterName: 'MockAdapter',
       responseValidation: null,
       error: null,
+      useRealLlm: false,
     }),
 }))

@@ -1,5 +1,6 @@
 // frontend/src/api/aiAsk/index.ts
 import { MockAdapter } from './mockAdapter'
+import { RealLlmAdapter } from './realLlmAdapter'
 import { AiAskError, getAiAskErrorMessage } from './errors'
 import { validateAiAskResponse } from './validator'
 
@@ -10,6 +11,7 @@ export { getAiAskErrorMessage }
 export { validateAiAskResponse }
 export type { ValidationResult, ValidationError } from './validator'
 export { MockAdapter }
+export { RealLlmAdapter }
 export { detectFollowUpType } from './followUpDetector'
 export type { FollowUpQuestion, FollowUpType, ProcessInsight } from '../../types/aiAsk'
 export { validateAiAskInput } from './inputGuard'
@@ -17,8 +19,9 @@ export type { InputValidationResult, InputGuardErrorCode } from './inputGuard'
 export { buildMessageHistory, compressResponse, compressHistory, truncateHistory, DEFAULT_CONTEXT_CONFIG } from './contextPolicy'
 export type { ContextPolicyConfig, CompressHistoryOptions } from './contextPolicy'
 
-export function useAiAskService() {
-  const adapter = MockAdapter.create()
+export function useAiAskService(options?: { useRealLlm?: boolean }) {
+  const useReal = options?.useRealLlm ?? false
+  const adapter = useReal ? RealLlmAdapter.create() : MockAdapter.create()
   return {
     analyze: adapter.analyze.bind(adapter),
     getChartData: adapter.getChartData.bind(adapter),

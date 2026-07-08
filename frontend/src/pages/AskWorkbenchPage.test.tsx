@@ -45,6 +45,7 @@ let mockAiAskState: Record<string, any> = {
   adapterName: 'MockAdapter',
   responseValidation: null,
   error: null,
+  useRealLlm: false,
   responseHistory: {},
   setDatasource: vi.fn(),
   setSelectedTables: vi.fn(),
@@ -57,6 +58,7 @@ let mockAiAskState: Record<string, any> = {
   setResponseValidation: vi.fn(),
   setError: vi.fn(),
   clearError: vi.fn(),
+  setUseRealLlm: vi.fn(),
   saveResponseForMessage: vi.fn(),
   getResponseForMessage: vi.fn(),
   reset: vi.fn(),
@@ -82,6 +84,13 @@ vi.mock('../api/askSessions', () => ({
     isPending: false,
   })),
 }))
+
+vi.mock('../api/llmSettings', () => ({
+  useLlmSettings: vi.fn(() => ({ data: undefined, isLoading: false })),
+}))
+
+// Re-import useLlmSettings after mock for test access
+import { useLlmSettings } from '../api/llmSettings'
 
 vi.mock('../api/aiAsk', async () => {
   const inputGuard = await vi.importActual('../api/aiAsk/inputGuard')
@@ -241,6 +250,7 @@ describe('AskWorkbenchPage', () => {
       adapterName: 'MockAdapter',
       responseValidation: null,
       error: null,
+      useRealLlm: false,
       responseHistory: {},
       setDatasource: vi.fn(),
       setSelectedTables: vi.fn(),
@@ -251,8 +261,9 @@ describe('AskWorkbenchPage', () => {
       setAnalysisStep: vi.fn(),
       setAdapterName: vi.fn(),
       setResponseValidation: vi.fn(),
-      setError: vi.fn(),
+      setError: vi.fn((err) => { (mockAiAskState as any).error = err }),
       clearError: vi.fn(),
+      setUseRealLlm: vi.fn(),
       saveResponseForMessage: vi.fn(),
       getResponseForMessage: vi.fn(),
       reset: vi.fn(),
@@ -456,6 +467,134 @@ describe('AskWorkbenchPage', () => {
 
     await waitFor(() => {
       expect(mockedAnalyze).toHaveBeenCalledWith('近 7 天销量', expect.any(Object))
+    })
+  })
+
+  // ── Real LLM toggle tests ──────────────────────────────────────
+
+  describe('Real LLM toggle', () => {
+    it('renders switch and defaults to mock mode (unchecked)', () => {
+      mockAskStore.currentSessionId = 1
+      renderPage()
+      const toggle = screen.getByRole('switch')
+      expect(toggle).toBeInTheDocument()
+      expect(toggle).not.toBeChecked()
+    })
+
+    it('disables switch and shows tooltip hint when no active LLM setting exists', () => {
+      vi.mocked(useLlmSettings).mockReturnValue({ data: [], isLoading: false } as any)
+      mockAskStore.currentSessionId = 1
+      renderPage()
+      const toggle = screen.getByRole('switch')
+      expect(toggle).toBeDisabled()
+    })
+
+    it('enables switch when active LLM setting exists', () => {
+      vi.mocked(useLlmSettings).mockReturnValue({
+        data: [{ id: 1, name: 'openai', is_active: true, base_url: '', api_key_masked: '***', model_name: 'gpt-4o-mini', last_tested_at: null, last_tested_ok: null, created_at: '', updated_at: '' }],
+        isLoading: false,
+      } as any)
+      mockAskStore.currentSessionId = 1
+      renderPage()
+      const toggle = screen.getByRole('switch')
+      expect(toggle).not.toBeDisabled()
+    })
+
+    it('calls setUseRealLlm(true) when switch is toggled on with active LLM', () => {
+      vi.mocked(useLlmSettings).mockReturnValue({
+        data: [{ id: 1, name: 'openai', is_active: true, base_url: '', api_key_masked: '***', model_name: 'gpt-4o-mini', last_tested_at: null, last_tested_ok: null, created_at: '', updated_at: '' }],
+        isLoading: false,
+      } as any)
+      mockAskStore.currentSessionId = 1
+      renderPage()
+      const toggle = screen.getByRole('switch')
+      fireEvent.click(toggle)
+      expect(mockAiAskState.setUseRealLlm).toHaveBeenCalledWith(true)
+    })
+
+    it('shows fallback switch back button when error occurs in real LLM mode', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = true
+      mockAiAskState.error = { code: 'LLM_CONNECTION_ERROR', message: '连接失败', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('分析异常')).toBeInTheDocument()
+      expect(screen.getByText('切回模拟模式再试')).toBeInTheDocument()
+    })
+
+    it('does not show fallback button when error occurs in mock mode', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = false
+      mockAiAskState.error = { code: 'ANALYSIS_TIMEOUT', message: '超时', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('分析异常')).toBeInTheDocument()
+      expect(screen.queryByText('切回模拟模式再试')).not.toBeInTheDocument()
+    })
+
+    it('calls setUseRealLlm(false) when fallback button is clicked', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = true
+      mockAiAskState.error = { code: 'LLM_CONNECTION_ERROR', message: '连接失败', name: 'AiAskError' }
+      renderPage()
+      fireEvent.click(screen.getByText('切回模拟模式再试'))
+      expect(mockAiAskState.setUseRealLlm).toHaveBeenCalledWith(false)
+    })
+
+    // —— Phase 5L: Datasource guard tests ————————————————————————
+
+    it('blocks analyze when useRealLlm=true and datasourceId is null (shows "请先选择数据源")', async () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = true
+      mockAiAskState.datasourceId = null
+      mockAiAskState.datasourceName = null
+      mockedAnalyze.mockResolvedValue(makeMockResponse())
+
+      renderPage()
+
+      fireEvent.click(screen.getByTestId('mock-send-btn'))
+
+      await waitFor(() => {
+        expect(mockAiAskState.setError).toHaveBeenCalled()
+      })
+      expect(mockAiAskState.setError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: '请先选择数据源' }),
+      )
+      // Also check that setAnalyzing was NOT called (we returned early)
+      expect(mockAiAskState.setAnalyzing).not.toHaveBeenCalled()
+      expect(mockedAnalyze).not.toHaveBeenCalled()
+    })
+
+    it('blocks analyze when useRealLlm=true and datasourceId is undefined', async () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = true
+      mockAiAskState.datasourceId = undefined
+      mockAiAskState.datasourceName = undefined
+      mockedAnalyze.mockResolvedValue(makeMockResponse())
+
+      renderPage()
+      fireEvent.click(screen.getByTestId('mock-send-btn'))
+
+      await waitFor(() => {
+        expect(mockAiAskState.setError).toHaveBeenCalled()
+      })
+      expect(mockAiAskState.setError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: '请先选择数据源' }),
+      )
+      expect(mockedAnalyze).not.toHaveBeenCalled()
+    })
+
+    it('does not block analyze when useRealLlm=false and datasource is null (mock path unaffected)', async () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.useRealLlm = false
+      mockAiAskState.datasourceId = null
+      mockAiAskState.datasourceName = null
+      mockedAnalyze.mockResolvedValue(makeMockResponse({ question: '近 7 天销量' }))
+
+      renderPage()
+      fireEvent.click(screen.getByTestId('mock-send-btn'))
+
+      await waitFor(() => {
+        expect(mockedAnalyze).toHaveBeenCalled()
+      })
     })
   })
 })

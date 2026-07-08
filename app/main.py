@@ -88,6 +88,7 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     from .api.field_semantics import router as field_semantics_router
     from .api.llm_settings import router as llm_settings_router
     from .api.ask import router as ask_router
+    from .api.ai_ask import router as ai_ask_router
     from .api.sql_workbench import router as sql_workbench_router
     from .api.chart_drafts import router as chart_drafts_router
     from .web.routes import router as web_router
@@ -102,6 +103,8 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     app.include_router(llm_settings_router, prefix="/api/llm-settings", tags=["LLM 配置"])
 
     app.include_router(ask_router, prefix="/api/ask", tags=["AI 问数"])
+
+    app.include_router(ai_ask_router, prefix="/api/ai-ask", tags=["AI 问数结构化分析"])
 
     app.include_router(sql_workbench_router, prefix="/api/sql", tags=["SQL 工作台"])
 

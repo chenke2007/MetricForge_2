@@ -1,5 +1,5 @@
 import React, { useCallback, useRef } from 'react'
-import { Layout, Typography, message, Alert, Button, Space, Table } from 'antd'
+import { Layout, Typography, message, Alert, Button, Space, Switch, Tooltip, Table } from 'antd'
 import { ClearOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import SessionList from '../components/SessionList'
@@ -15,6 +15,7 @@ import AiNarrative from '../components/AiNarrative'
 import SemanticGapAlert from '../components/SemanticGapAlert'
 import ContextChain from '../components/ContextChain'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
+import { useLlmSettings } from '../api/llmSettings'
 import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
 import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput, buildMessageHistory } from '../api/aiAsk'
@@ -49,6 +50,7 @@ const AskWorkbenchPage: React.FC = () => {
     error: storeError,
     activeChartIndex,
     analysisStep,
+    useRealLlm,
     setCurrentResponse,
     setAnalyzing,
     setActiveChart,
@@ -57,9 +59,13 @@ const AskWorkbenchPage: React.FC = () => {
     setResponseValidation,
     setError,
     clearError,
+    setUseRealLlm,
   } = useAiAskStore()
 
-  const adapter = useAiAskService()
+  const { data: llmSettings } = useLlmSettings()
+  const hasActiveLlm = llmSettings?.some((s) => s.is_active) ?? false
+
+  const adapter = useAiAskService({ useRealLlm })
   const chartDataRef = useRef<{ columns: string[]; rows: any[][] } | null>(null)
 
   // Phase 5H: Context tracking
@@ -128,6 +134,12 @@ const AskWorkbenchPage: React.FC = () => {
       await createMessage.mutateAsync({ sessionId, content })
     } catch {
       message.error('发送失败，请重试')
+      return
+    }
+
+    // Phase 5L: Block analyze in real LLM mode when datasource is missing
+    if (useRealLlm && (!datasourceId || !datasourceName)) {
+      setError(new AiAskError('请先选择数据源', 'UNKNOWN'))
       return
     }
 
@@ -201,7 +213,7 @@ const AskWorkbenchPage: React.FC = () => {
     currentSessionId, createSession, setCurrentSession,
     createMessage, datasourceId, datasourceName, selectedTables,
     adapter, clearError, setAdapterName, setAnalyzing, setAnalysisStep,
-    setResponseValidation, setCurrentResponse, setError,
+    setResponseValidation, setCurrentResponse, setError, useRealLlm,
   ])
 
   const handleOpenInWorkbench = useCallback((sql: string, dsId: number) => {
@@ -254,9 +266,31 @@ const AskWorkbenchPage: React.FC = () => {
             background: '#fff',
             borderBottom: '1px solid #f0f0f0',
             padding: '0 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           }}
         >
           <AgentNav activeKey={agentMode} onChange={() => {}} />
+          <Tooltip
+            title={
+              hasActiveLlm
+                ? '真实 LLM 开关关闭时将使用模拟模式 (MockAdapter)'
+                : '没有已启用的 LLM 配置，请先在 LLM 连接管理中启用模型'
+            }
+          >
+            <Switch
+              checked={useRealLlm}
+              onChange={(v) => {
+                setUseRealLlm(v)
+                clearError()
+              }}
+              disabled={!hasActiveLlm}
+              checkedChildren="真实 LLM"
+              unCheckedChildren="模拟模式"
+              style={{ fontSize: 12 }}
+            />
+          </Tooltip>
         </div>
 
         {/* Empty state */}
@@ -375,8 +409,19 @@ const AskWorkbenchPage: React.FC = () => {
                   style={{ borderRadius: 8, marginBottom: 12 }}
                   message={
                     <div>
-                      <div style={{ fontWeight: 500, marginBottom: 4 }}>分析异常</div>
-                      <div style={{ fontSize: 12 }}>{getAiAskErrorMessage(storeError.code)}</div>
+                      <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                        {storeError.code === 'UNKNOWN' && storeError.message === '请先选择数据源'
+                          ? '配置不足'
+                          : '分析异常'}
+                      </div>
+                      <div style={{ fontSize: 12 }}>{storeError.message || getAiAskErrorMessage(storeError.code)}</div>
+                      {useRealLlm && (
+                        <Space style={{ marginTop: 6 }}>
+                          <Button size="small" onClick={() => { setUseRealLlm(false); clearError() }}>
+                            切回模拟模式再试
+                          </Button>
+                        </Space>
+                      )}
                       {storeError.code && (
                         <Space style={{ marginTop: 6 }}>
                           <Button size="small" icon={<ReloadOutlined />} onClick={() => clearError()}>关闭</Button>
