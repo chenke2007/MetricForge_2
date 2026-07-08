@@ -29,7 +29,8 @@ DEFAULT_CONSTRAINTS = """约束：
 
 METADATA_CONSTRAINTS = """## SQL 生成约束（必须遵守）
 1. 只能使用以上列出的表结构和字段。禁止创建以上结构中不存在的字段。
-2. 表名必须 schema 限定：DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M，不可以只写 DWS_RPT_ZCPZ_CYFL_TF_M。
+2. 表名必须使用上方元数据列出的 schema.table 完整表名，不可以只写裸表名。
+   例如可使用元数据中的完整表名，但不要硬编码单一表作为全局规则。
 3. 如果用户指定 partition(p20260630)，结合表结构判断：如果目标表有 pt 字段，
    则应使用 pt='20260630' 过滤，不要使用不适配的 partition 语法。
 4. 如果用户问题中的业务概念无法对应到任何现有字段，请在 semanticGaps 中报告，
@@ -74,13 +75,12 @@ def _build_metadata_section(metadata_context: list) -> str:
         full_name = f"{table.schema_name}.{table.table_name}" if table.schema_name else table.table_name
         hint = _build_naming_hints(table.table_name)
 
-        # 表头
+        # 表头 - 同时显示表注释和命名规则提示
+        lines.append(f"### {full_name}")
+        if table.table_comment:
+            lines.append(f"表说明：{table.table_comment}")
         if hint:
-            lines.append(f"### {full_name}（{hint}）")
-        elif table.table_comment:
-            lines.append(f"### {full_name}（{table.table_comment}）")
-        else:
-            lines.append(f"### {full_name}")
+            lines.append(f"命名规则：{hint}")
 
         # 字段列表
         col_lines = _format_columns_with_notes(table.columns)
@@ -115,7 +115,8 @@ def _build_domain_rules_section() -> str:
         "  - ADS_ = 应用数据层（面向应用的轻度汇总）",
         "- 分区规则：",
         f"  {build_partition_filter_instruction().replace(chr(10), '  ' + chr(10))}",
-        "- 所有 SQL 中的真实数仓表必须 schema 限定（DWHRPT.表名）",
+        "- 所有真实数仓表必须 schema 限定，例如 SCHEMA.TABLE。",
+        "  具体 schema/table 以上方「可用数据表结构」中列出的 full_name 为准。",
         "- 只允许生成 SELECT 查询",
     ]
     return "\n".join(lines)

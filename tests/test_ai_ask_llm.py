@@ -807,3 +807,85 @@ class TestPromptBuilderMetadataGrounding:
         # Table header with naming hint
         assert "DWS_" in prompt
         assert "汇总" in prompt
+
+    # ── Phase 5M Task 2 follow-up: 窄修复测试 ──────────────────────────────────
+
+    def test_prompt_contains_table_comment(self):
+        """Metadata section must include table_comment as separate line."""
+        request = {
+            "question": "各区域投放金额排名",
+            "datasource_id": 2,
+            "datasource_name": "dwhrpt",
+            "selected_tables": ["DWS_RPT_ZCPZ_CYFL_TF_M"],
+            "message_history": [],
+        }
+        meta = [_make_resolved_table()]
+        prompt = AiAskPromptBuilder.build(request, metadata_context=meta)
+        assert "表说明：投放资产分类月度快照表" in prompt
+
+    def test_prompt_contains_both_comment_and_hint(self):
+        """Metadata section should display both table_comment and naming hints together."""
+        request = {
+            "question": "各区域投放金额排名",
+            "datasource_id": 2,
+            "datasource_name": "dwhrpt",
+            "selected_tables": ["DWS_RPT_ZCPZ_CYFL_TF_M"],
+            "message_history": [],
+        }
+        meta = [_make_resolved_table()]
+        prompt = AiAskPromptBuilder.build(request, metadata_context=meta)
+        assert "表说明：" in prompt
+        assert "命名规则：" in prompt
+        assert "投放资产分类月度快照表" in prompt
+
+    def test_prompt_uses_generic_full_table_name_constraint(self):
+        """Constraint must require using metadata-listed full names, not hardcode a table."""
+        request = {
+            "question": "各区域投放金额排名",
+            "datasource_id": 2,
+            "datasource_name": "dwhrpt",
+            "selected_tables": ["DWS_RPT_ZCPZ_CYFL_TF_M"],
+            "message_history": [],
+        }
+        meta = [_make_resolved_table()]
+        prompt = AiAskPromptBuilder.build(request, metadata_context=meta)
+        assert "使用上方元数据列出的 schema.table 完整表名" in prompt or "使用上方元数据列出的完整表名" in prompt
+        # The table should still appear in the metadata section (that's correct behavior)
+        assert "DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M" in prompt
+
+    def test_general_constraint_no_longer_hardcodes_single_table(self):
+        """The METADATA_CONSTRAINTS section must NOT contain the specific table as a rule."""
+        request = {
+            "question": "各区域投放金额排名",
+            "datasource_id": 2,
+            "datasource_name": "dwhrpt",
+            "selected_tables": ["DWS_RPT_ZCPZ_CYFL_TF_M"],
+            "message_history": [],
+        }
+        meta = [_make_resolved_table()]
+        prompt = AiAskPromptBuilder.build(request, metadata_context=meta)
+
+        # Locate the SQL 生成约束 section
+        constraints_idx = prompt.find("SQL 生成约束")
+        assert constraints_idx >= 0
+        constraints_section = prompt[constraints_idx:constraints_idx + 500]
+        # The constraint section should not hardcode the specific table
+        assert "DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M" not in constraints_section
+        # But the full name is still present in the metadata section above
+        assert "DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M" in prompt
+
+    def test_domain_rules_no_longer_hardcodes_dwhrpt_tablename(self):
+        """Domain rules section should use generic SCHEMA.TABLE form, not DWHRPT.表名."""
+        request = {
+            "question": "各区域投放金额排名",
+            "datasource_id": 2,
+            "datasource_name": "dwhrpt",
+            "selected_tables": ["DWS_RPT_ZCPZ_CYFL_TF_M"],
+            "message_history": [],
+        }
+        meta = [_make_resolved_table()]
+        prompt = AiAskPromptBuilder.build(request, metadata_context=meta)
+        # Should use generic form
+        assert "SCHEMA.TABLE" in prompt
+        # Should NOT use the old hardcoded form
+        assert "DWHRPT.表名" not in prompt
