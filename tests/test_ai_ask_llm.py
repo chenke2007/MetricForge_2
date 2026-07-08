@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import json
 import os
 import pytest
 from app.schemas.ai_ask import (
@@ -285,6 +286,91 @@ def test_analyze_returns_invalid_response_for_bad_json(mock_decrypt, mock_openai
 
     svc = AiAskLlmService()
     result = svc.analyze(make_request(), db=db)
+    assert result.ok is False
+    assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
+
+
+# ── Phase 5L: Datasource alignment ──────────────────────────────────────────
+
+
+def make_request_dwhrpt():
+    """Request targeting dwhrpt (id=2) — distinct from the default make_request()."""
+    return {
+        "question": "各区域销售额排名",
+        "datasource_id": 2,
+        "datasource_name": "dwhrpt",
+        "selected_tables": ["sales"],
+        "message_history": [],
+    }
+
+
+@patch("app.services.ai_ask.llm_service.OpenAI")
+@patch("app.services.ai_ask.llm_service.decrypt")
+def test_analyze_overrides_sqlplan_datasource_with_request(mock_decrypt, mock_openai_cls):
+    """LLM returns datasourceId=1 / '模型编造数据源'; service must force request values."""
+    mock_decrypt.return_value = "plain-api-key"
+    db = _mock_db_with_active(active=_make_active_setting())
+
+    llm_response = {
+        "question": "各区域销售额排名",
+        "intent": {"metrics": ["销售额"], "dimensions": ["区域"], "filters": []},
+        "sqlPlan": {
+            "datasourceId": 1,
+            "datasourceName": "模型编造数据源",
+            "sql": "SELECT region, SUM(amount) FROM sales GROUP BY region",
+            "tables": ["sales"],
+            "fields": ["region", "amount"],
+            "assumptions": [],
+            "safetyWarnings": [],
+        },
+        "resultSummary": {"rowCount": 5, "durationMs": 100},
+        "chartSuggestions": [{"title": "销售额排名", "chartType": "bar", "yFields": ["销售额"], "rationale": "...", "limitations": []}],
+        "narrative": {"summary": "...", "keyFindings": [], "evidence": [{"claim": "...", "fields": ["区域"]}], "risks": [], "nextQuestions": []},
+        "semanticGaps": [],
+    }
+
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=json.dumps(llm_response)))]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_completion
+    mock_openai_cls.return_value = mock_client
+
+    svc = AiAskLlmService()
+    request = make_request_dwhrpt()
+    result = svc.analyze(request, db=db)
+
+    assert result.ok is True
+    assert result.data["sqlPlan"]["datasourceId"] == 2
+    assert result.data["sqlPlan"]["datasourceName"] == "dwhrpt"
+
+
+@patch("app.services.ai_ask.llm_service.OpenAI")
+@patch("app.services.ai_ask.llm_service.decrypt")
+def test_analyze_does_not_create_sqlplan_when_missing(mock_decrypt, mock_openai_cls):
+    """Missing sqlPlan in LLM response must still yield INVALID_RESPONSE;
+    the datasource override must NOT synthesize a sqlPlan."""
+    mock_decrypt.return_value = "plain-api-key"
+    db = _mock_db_with_active(active=_make_active_setting())
+
+    llm_response = {
+        "question": "各区域销售额排名",
+        "intent": {"metrics": ["销售额"], "dimensions": ["区域"], "filters": []},
+        # intentionally missing sqlPlan
+        "chartSuggestions": [],
+        "narrative": {"summary": "...", "keyFindings": [], "evidence": [{"claim": "...", "fields": ["区域"]}], "risks": [], "nextQuestions": []},
+        "semanticGaps": [],
+    }
+
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=json.dumps(llm_response)))]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_completion
+    mock_openai_cls.return_value = mock_client
+
+    svc = AiAskLlmService()
+    request = make_request_dwhrpt()
+    result = svc.analyze(request, db=db)
+
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 

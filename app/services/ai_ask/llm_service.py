@@ -62,6 +62,13 @@ class AiAskLlmService:
             )
 
         normalized = AiAskResponseNormalizer.normalize(parsed)
+
+        # Phase 5L: Force sqlPlan datasource to match the request — LLM may
+        # return arbitrary values that would cause downstream data routing errors.
+        if isinstance(normalized, dict) and isinstance(normalized.get("sqlPlan"), dict):
+            normalized["sqlPlan"]["datasourceId"] = request["datasource_id"]
+            normalized["sqlPlan"]["datasourceName"] = request["datasource_name"]
+
         validation = validate_ai_ask_response(normalized)
         if not validation["valid"]:
             return AiAskAnalyzeErrorResponse(
