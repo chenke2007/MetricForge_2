@@ -15,6 +15,7 @@ export interface ValidationResult {
 const VALID_CHART_TYPES = ['bar', 'line', 'pie', 'table', 'metric-card', 'combo']
 const VALID_CONFIDENCE = ['high', 'medium', 'low']
 const VALID_GAP_REASONS = ['not_found', 'ambiguous', 'incomplete']
+const VALID_NARRATIVE_LEVELS = ['sql_pending', 'executed']
 const VALID_FOLLOW_UP_TYPES = [
   'why_down',
   'drill_down',
@@ -267,6 +268,20 @@ export function validateAiAskResponse(response: unknown): ValidationResult {
       if (!VALID_CONFIDENCE.includes(followUp.confidence as string)) {
         errors.push({ path: 'followUp.confidence', message: 'followUp.confidence 不合法', severity: 'error' })
       }
+    }
+  }
+
+  // narrativeLevel — Phase 5M: optional, only check if present
+  if (response.narrativeLevel !== undefined) {
+    if (!VALID_NARRATIVE_LEVELS.includes(response.narrativeLevel as string)) {
+      errors.push({ path: 'narrativeLevel', message: `narrativeLevel 只能为 sql_pending 或 executed`, severity: 'error' })
+    }
+  }
+
+  // sqlValidation — Phase 5M: optional, no content validation
+  if (response.sqlValidation !== undefined) {
+    if (!isObject(response.sqlValidation)) {
+      errors.push({ path: 'sqlValidation', message: 'sqlValidation 必须为对象', severity: 'error' })
     }
   }
 
