@@ -143,3 +143,83 @@ describe('AiChartBoard', () => {
     expect(screen.getByText('暂无图表建议')).toBeInTheDocument()
   })
 })
+
+// --- Phase 5M: Narrative Trust — sql_pending placeholder ---
+
+describe('AiChartBoard Phase 5M Narrative Trust', () => {
+  it('shows placeholder text when narrativeLevel is sql_pending', () => {
+    render(
+      <AiChartBoard
+        chartSuggestions={suggestions}
+        columns={mockData.columns}
+        rows={mockData.rows}
+        activeIndex={0}
+        onActiveChange={() => {}}
+        narrativeLevel="sql_pending"
+      />
+    )
+    expect(screen.getByText('⏳ 待 SQL Workbench 验证后展示')).toBeInTheDocument()
+  })
+
+  it('does NOT render chart cards when narrativeLevel is sql_pending', () => {
+    render(
+      <AiChartBoard
+        chartSuggestions={suggestions}
+        columns={mockData.columns}
+        rows={mockData.rows}
+        activeIndex={0}
+        onActiveChange={() => {}}
+        narrativeLevel="sql_pending"
+      />
+    )
+    expect(screen.queryByText('各区域销售额排行')).not.toBeInTheDocument()
+    expect(screen.queryByText('各区域毛利率对比')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chart-card-各区域销售额排行')).not.toBeInTheDocument()
+  })
+
+  it('does NOT show "{n} 种视角" count when sql_pending', () => {
+    render(
+      <AiChartBoard
+        chartSuggestions={suggestions}
+        columns={mockData.columns}
+        rows={mockData.rows}
+        activeIndex={0}
+        onActiveChange={() => {}}
+        narrativeLevel="sql_pending"
+      />
+    )
+    expect(screen.queryByText(/共 \d+ 种视角/)).not.toBeInTheDocument()
+  })
+
+  it('renders normal chart cards when narrativeLevel is executed', () => {
+    render(
+      <AiChartBoard
+        chartSuggestions={suggestions}
+        columns={mockData.columns}
+        rows={mockData.rows}
+        activeIndex={0}
+        onActiveChange={() => {}}
+        narrativeLevel="executed"
+      />
+    )
+    expect(screen.getByText('各区域销售额排行')).toBeInTheDocument()
+    expect(screen.getByText('各区域毛利率对比')).toBeInTheDocument()
+    expect(screen.getByText(/共 3 种视角/)).toBeInTheDocument()
+    expect(screen.queryByText('⏳ 待 SQL Workbench 验证后展示')).not.toBeInTheDocument()
+  })
+
+  it('renders normal chart cards when narrativeLevel is undefined (backward compat)', () => {
+    render(
+      <AiChartBoard
+        chartSuggestions={suggestions}
+        columns={mockData.columns}
+        rows={mockData.rows}
+        activeIndex={0}
+        onActiveChange={() => {}}
+      />
+    )
+    expect(screen.getByText('各区域销售额排行')).toBeInTheDocument()
+    expect(screen.getByText(/共 3 种视角/)).toBeInTheDocument()
+    expect(screen.queryByText('⏳ 待 SQL Workbench 验证后展示')).not.toBeInTheDocument()
+  })
+})

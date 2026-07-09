@@ -615,6 +615,18 @@ describe('AskWorkbenchPage', () => {
       expect(screen.getByText('请先采集元数据或选择已采集的数据表')).toBeInTheDocument()
     })
 
+    it('navigates to /web/datasources when metadata guidance button is clicked', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      // jsdom Location is read-only, so verify rendering + check button text link
+      renderPage()
+      const button = screen.getByText('前往数据源管理').closest('button')
+      expect(button).toBeInTheDocument()
+      expect(button?.textContent).toContain('前往数据源管理')
+    })
+
     it('does NOT render result area when METADATA_NOT_FOUND', () => {
       mockAskStore.currentSessionId = 1
       mockAiAskState.currentResponse = makeMockResponse()

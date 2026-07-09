@@ -421,7 +421,7 @@ const AskWorkbenchPage: React.FC = () => {
                     }
                     action={
                       <Space>
-                        <Button size="small" onClick={() => navigate('/datasources')}>
+                        <Button size="small" onClick={() => window.location.href = '/web/datasources'}>
                           前往数据源管理
                         </Button>
                         <Button size="small" onClick={() => clearError()}>
