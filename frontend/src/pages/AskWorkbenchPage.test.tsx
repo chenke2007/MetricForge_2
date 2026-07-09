@@ -5,8 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { message } from 'antd'
 import AskWorkbenchPage from './AskWorkbenchPage'
 
-const { mockedAnalyze } = vi.hoisted(() => ({
+const { mockedAnalyze, mockNavigateToExternal } = vi.hoisted(() => ({
   mockedAnalyze: vi.fn(),
+  mockNavigateToExternal: vi.fn(),
 }))
 
 // --- Mocks ---
@@ -119,6 +120,11 @@ vi.mock('../api/aiAsk', async () => {
     }),
   }
 })
+
+// Mock navigation util for spy assertions
+vi.mock('../utils/navigation', () => ({
+  navigateToExternal: mockNavigateToExternal,
+}))
 
 vi.mock('../components/SessionList', () => ({
   default: () => <div data-testid="session-list">SessionList</div>,
@@ -620,11 +626,11 @@ describe('AskWorkbenchPage', () => {
       mockAiAskState.currentResponse = null
       mockAiAskState.isAnalyzing = false
       mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
-      // jsdom Location is read-only, so verify rendering + check button text link
       renderPage()
-      const button = screen.getByText('前往数据源管理').closest('button')
+      const button = screen.getByText('前往数据源管理').closest('button')!
       expect(button).toBeInTheDocument()
-      expect(button?.textContent).toContain('前往数据源管理')
+      fireEvent.click(button)
+      expect(mockNavigateToExternal).toHaveBeenCalledWith('/web/datasources')
     })
 
     it('does NOT render result area when METADATA_NOT_FOUND', () => {

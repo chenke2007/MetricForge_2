@@ -21,6 +21,7 @@ import { useAskStore } from '../stores/askStore'
 import { useAiAskStore } from '../stores/aiAskStore'
 import { useAiAskService, AiAskError, getAiAskErrorMessage, validateAiAskInput, buildMessageHistory } from '../api/aiAsk'
 import { formatCompact } from '../utils/numberFormat'
+import { navigateToExternal } from '../utils/navigation'
 import type { ProcessInsight, FollowUpQuestion, AiAskResponse } from '../types/aiAsk'
 
 const { Sider, Content } = Layout
@@ -421,7 +422,7 @@ const AskWorkbenchPage: React.FC = () => {
                     }
                     action={
                       <Space>
-                        <Button size="small" onClick={() => window.location.href = '/web/datasources'}>
+                        <Button size="small" onClick={() => navigateToExternal('/web/datasources')}>
                           前往数据源管理
                         </Button>
                         <Button size="small" onClick={() => clearError()}>
