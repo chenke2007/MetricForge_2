@@ -188,11 +188,15 @@ vi.mock('../components/SqlPlan', () => ({
 }))
 
 vi.mock('../components/AiChartBoard', () => ({
-  default: () => <div data-testid="ai-chart-board">AiChartBoard</div>,
+  default: (props: any) => (
+    <div data-testid="ai-chart-board">
+      AiChartBoard{props?.narrativeLevel === 'sql_pending' ? ' (sql_pending)' : ''}
+    </div>
+  ),
 }))
 
 vi.mock('../components/AiNarrative', () => ({
-  default: () => <div data-testid="ai-narrative">AiNarrative</div>,
+  default: (props: any) => <div data-testid="ai-narrative">AiNarrative{props?.narrativeLevel === 'sql_pending' ? ' (sql_pending)' : ''}</div>,
 }))
 
 vi.mock('../components/ContextChain', () => ({
@@ -595,6 +599,84 @@ describe('AskWorkbenchPage', () => {
       await waitFor(() => {
         expect(mockedAnalyze).toHaveBeenCalled()
       })
+    })
+  })
+
+  // ── Phase 5M: Narrative Trust & Error UI tests ─────────────────
+
+  describe('Phase 5M Narrative Trust UI', () => {
+    it('shows metadata guidance when storeError.code is METADATA_NOT_FOUND', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('表元数据未采集')).toBeInTheDocument()
+      expect(screen.getByText('请先采集元数据或选择已采集的数据表')).toBeInTheDocument()
+    })
+
+    it('does NOT render result area when METADATA_NOT_FOUND', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      renderPage()
+      expect(screen.queryByTestId('intent-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sql-plan')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-chart-board')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-narrative')).not.toBeInTheDocument()
+    })
+
+    it('shows SqlValidationAlert when INVALID_RESPONSE with details.sqlValidation', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = {
+        code: 'INVALID_RESPONSE',
+        message: 'SQL 校验未通过',
+        name: 'AiAskError',
+        details: {
+          sqlValidation: {
+            errors: [{ rule: 'FIELD_NOT_FOUND', message: '字段 region 在表中不存在' }],
+            warnings: [],
+            sql: 'SELECT region FROM t',
+          },
+        },
+      }
+      renderPage()
+      expect(screen.getByText('字段 region 在表中不存在')).toBeInTheDocument()
+    })
+
+    it('does NOT render result area when INVALID_RESPONSE with sqlValidation', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = {
+        code: 'INVALID_RESPONSE',
+        message: 'SQL 校验未通过',
+        name: 'AiAskError',
+        details: {
+          sqlValidation: {
+            errors: [{ rule: 'FIELD_NOT_FOUND', message: '字段 region 不存在' }],
+            warnings: [],
+            sql: 'SELECT region FROM t',
+          },
+        },
+      }
+      renderPage()
+      expect(screen.queryByTestId('intent-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sql-plan')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-chart-board')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-narrative')).not.toBeInTheDocument()
+    })
+
+    it('shows default error alert for other error codes', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'ANALYSIS_TIMEOUT', message: '超时', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('分析异常')).toBeInTheDocument()
     })
   })
 })

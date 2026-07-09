@@ -297,3 +297,85 @@ describe('AiNarrative evidence chain (Phase 5J)', () => {
     expect(highIndicators.length).toBeGreaterThanOrEqual(1)
   })
 })
+
+// --- Phase 5M: Narrative Trust UI ---
+
+describe('AiNarrative Phase 5M Narrative Trust', () => {
+  const fullNarrative = {
+    summary: '分析口径：按区域汇总近 30 天销售数据',
+    keyFindings: ['华东区域销售额 12.3M'],
+    evidence: [
+      { claim: '华东领先', fields: ['region', 'total_revenue'], value: '12.3M' },
+    ],
+    risks: ['仅覆盖 30 天'],
+    nextQuestions: ['为什么华东订单数下降？'],
+    conclusion: '华东区域应作为重点市场。',
+  }
+
+  it('hides keyFindings when narrativeLevel is sql_pending (even if data exists)', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.queryByText(/华东区域销售额 12\.3M/)).not.toBeInTheDocument()
+  })
+
+  it('hides evidence when narrativeLevel is sql_pending', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.queryByText('证据')).not.toBeInTheDocument()
+  })
+
+  it('hides conclusion when narrativeLevel is sql_pending', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.queryByText('结论')).not.toBeInTheDocument()
+  })
+
+  it('shows summary when narrativeLevel is sql_pending', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.getByText(/分析口径/)).toBeInTheDocument()
+  })
+
+  it('shows risks when narrativeLevel is sql_pending', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.getByText(/仅覆盖 30 天/)).toBeInTheDocument()
+  })
+
+  it('shows nextQuestions when narrativeLevel is sql_pending', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="sql_pending" />)
+    expect(screen.getByText('为什么华东订单数下降？')).toBeInTheDocument()
+  })
+
+  it('shows all content when narrativeLevel is executed', () => {
+    render(<AiNarrative narrative={fullNarrative} narrativeLevel="executed" />)
+    expect(screen.getByText(/华东区域销售额 12\.3M/)).toBeInTheDocument()
+    expect(screen.getByText('证据')).toBeInTheDocument()
+    expect(screen.getByText('结论')).toBeInTheDocument()
+    expect(screen.getByText(/分析口径/)).toBeInTheDocument()
+    expect(screen.getByText(/仅覆盖 30 天/)).toBeInTheDocument()
+  })
+
+  it('shows all content when narrativeLevel is undefined (backward compat)', () => {
+    render(<AiNarrative narrative={fullNarrative} />)
+    expect(screen.getByText(/华东区域销售额 12\.3M/)).toBeInTheDocument()
+    expect(screen.getByText('证据')).toBeInTheDocument()
+    expect(screen.getByText('结论')).toBeInTheDocument()
+  })
+
+  it('forces empty keyFindings even when backend sends spurious data in sql_pending', () => {
+    // Simulate backend sending data despite sql_pending
+    const spuriousNarrative = {
+      summary: '口径说明',
+      keyFindings: ['后端错误返回的发现'],
+      evidence: [{ claim: '后端错误返回的证据', fields: ['x'] }],
+      risks: ['风险说明'],
+      nextQuestions: ['追问？'],
+      conclusion: '后端错误返回的结论',
+    }
+    render(<AiNarrative narrative={spuriousNarrative} narrativeLevel="sql_pending" />)
+    // Frontend must protect — hide all fact-claiming sections
+    expect(screen.queryByText('后端错误返回的发现')).not.toBeInTheDocument()
+    expect(screen.queryByText('证据')).not.toBeInTheDocument()
+    expect(screen.queryByText('结论')).not.toBeInTheDocument()
+    // Still show safe sections
+    expect(screen.getByText(/口径说明/)).toBeInTheDocument()
+    expect(screen.getByText(/风险说明/)).toBeInTheDocument()
+    expect(screen.getByText('追问？')).toBeInTheDocument()
+  })
+})

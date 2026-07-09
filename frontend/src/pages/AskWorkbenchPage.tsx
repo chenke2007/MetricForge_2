@@ -14,6 +14,7 @@ import AiChartBoard from '../components/AiChartBoard'
 import AiNarrative from '../components/AiNarrative'
 import SemanticGapAlert from '../components/SemanticGapAlert'
 import ContextChain from '../components/ContextChain'
+import SqlValidationAlert from '../components/SqlValidationAlert'
 import { useAskMessages, useCreateMessage, useCreateSession } from '../api/askSessions'
 import { useLlmSettings } from '../api/llmSettings'
 import { useAskStore } from '../stores/askStore'
@@ -401,35 +402,74 @@ const AskWorkbenchPage: React.FC = () => {
                 />
               )}
 
-              {/* Error state */}
+              {/* Error state — Phase 5M: METADATA_NOT_FOUND and INVALID_RESPONSE + sqlValidation */}
               {storeError && !isAnalyzing && (
-                <Alert
-                  type="error"
-                  showIcon
-                  style={{ borderRadius: 8, marginBottom: 12 }}
-                  message={
-                    <div>
-                      <div style={{ fontWeight: 500, marginBottom: 4 }}>
-                        {storeError.code === 'UNKNOWN' && storeError.message === '请先选择数据源'
-                          ? '配置不足'
-                          : '分析异常'}
+                <div>{(storeError.code === 'METADATA_NOT_FOUND') ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ borderRadius: 8, marginBottom: 12 }}
+                    message={
+                      <div>
+                        <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                          表元数据未采集
+                        </div>
+                        <div style={{ fontSize: 12 }}>
+                          请先采集元数据或选择已采集的数据表
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12 }}>{storeError.message || getAiAskErrorMessage(storeError.code)}</div>
-                      {useRealLlm && (
-                        <Space style={{ marginTop: 6 }}>
-                          <Button size="small" onClick={() => { setUseRealLlm(false); clearError() }}>
-                            切回模拟模式再试
-                          </Button>
-                        </Space>
-                      )}
-                      {storeError.code && (
-                        <Space style={{ marginTop: 6 }}>
-                          <Button size="small" icon={<ReloadOutlined />} onClick={() => clearError()}>关闭</Button>
-                        </Space>
-                      )}
-                    </div>
-                  }
-                />
+                    }
+                    action={
+                      <Space>
+                        <Button size="small" onClick={() => navigate('/datasources')}>
+                          前往数据源管理
+                        </Button>
+                        <Button size="small" onClick={() => clearError()}>
+                          关闭
+                        </Button>
+                      </Space>
+                    }
+                  />
+                ) : (storeError.code === 'INVALID_RESPONSE' && (storeError as any).details?.sqlValidation) ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <SqlValidationAlert detail={(storeError as any).details.sqlValidation} />
+                    {useRealLlm && (
+                      <Space style={{ marginTop: 8 }}>
+                        <Button size="small" onClick={() => { setUseRealLlm(false); clearError() }}>
+                          切回模拟模式再试
+                        </Button>
+                      </Space>
+                    )}
+                  </div>
+                ) : (
+                  <Alert
+                    type="error"
+                    showIcon
+                    style={{ borderRadius: 8, marginBottom: 12 }}
+                    message={
+                      <div>
+                        <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                          {storeError.code === 'UNKNOWN' && storeError.message === '请先选择数据源'
+                            ? '配置不足'
+                            : '分析异常'}
+                        </div>
+                        <div style={{ fontSize: 12 }}>{storeError.message || getAiAskErrorMessage(storeError.code)}</div>
+                        {useRealLlm && (
+                          <Space style={{ marginTop: 6 }}>
+                            <Button size="small" onClick={() => { setUseRealLlm(false); clearError() }}>
+                              切回模拟模式再试
+                            </Button>
+                          </Space>
+                        )}
+                        {storeError.code && (
+                          <Space style={{ marginTop: 6 }}>
+                            <Button size="small" icon={<ReloadOutlined />} onClick={() => clearError()}>关闭</Button>
+                          </Space>
+                        )}
+                      </div>
+                    }
+                  />
+                )}</div>
               )}
 
               {/* Analyzing with skeleton + step indicator */}
@@ -526,8 +566,11 @@ const AskWorkbenchPage: React.FC = () => {
                 </div>
               )}
 
-              {/* AI result cards */}
-              {currentResponse && !isAnalyzing && (
+              {/* AI result cards — hidden for METADATA_NOT_FOUND and INVALID_RESPONSE+sqlValidation */}
+              {currentResponse && !isAnalyzing && !(
+                storeError?.code === 'METADATA_NOT_FOUND' ||
+                (storeError?.code === 'INVALID_RESPONSE' && (storeError as any).details?.sqlValidation)
+              ) && (
                 <div>
                   {/* Phase 5H: Follow-up context indicator */}
                   {isFollowUpMode && (
@@ -597,7 +640,8 @@ const AskWorkbenchPage: React.FC = () => {
                   )}
 
                   {/* Result summary table — Ant Design Table */}
-                  {currentResponse.resultSummary && chartDataRef.current && (
+                  {/* Phase 5M: hide factual query results when sql_pending */}
+                  {currentResponse.resultSummary && chartDataRef.current && currentResponse.narrativeLevel !== 'sql_pending' && (
                     <div
                       style={{
                         marginBottom: 12,
@@ -684,11 +728,13 @@ const AskWorkbenchPage: React.FC = () => {
                       rows={chartDataRef.current?.rows ?? []}
                       activeIndex={activeChartIndex}
                       onActiveChange={setActiveChart}
+                      narrativeLevel={currentResponse.narrativeLevel}
                     />
                   )}
 
                   <AiNarrative
                     narrative={currentResponse.narrative}
+                    narrativeLevel={currentResponse.narrativeLevel}
                     onAskQuestion={handleSend}
                   />
                 </div>
