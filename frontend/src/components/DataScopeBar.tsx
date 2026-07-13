@@ -53,6 +53,11 @@ const DataScopeBar: React.FC<DataScopeBarProps> = ({ siderCollapsed, onToggleCol
         loading={dsLoading}
         value={datasourceId}
         onChange={(id) => {
+          if (id == null) {
+            setDatasource(null, null)
+            setSelectedTables([])
+            return
+          }
           const ds = datasources?.find((d) => d.id === id)
           setDatasource(id, ds?.name || null)
           setSelectedTables([])
