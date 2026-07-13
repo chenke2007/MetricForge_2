@@ -3,6 +3,7 @@ import { Typography, Empty } from 'antd'
 import { BarChartOutlined } from '@ant-design/icons'
 import ChartCard from './ChartCard'
 import type { AiChartSpec } from '../types/aiAsk'
+import type { NarrativeLevel } from '../types/aiAsk'
 
 const { Text } = Typography
 
@@ -12,6 +13,8 @@ interface AiChartBoardProps {
   rows: any[][]
   activeIndex: number
   onActiveChange: (index: number) => void
+  /** Phase 5M: when sql_pending, show placeholder instead of factual charts */
+  narrativeLevel?: NarrativeLevel
 }
 
 const AiChartBoard: React.FC<AiChartBoardProps> = ({
@@ -20,7 +23,32 @@ const AiChartBoard: React.FC<AiChartBoardProps> = ({
   rows,
   activeIndex,
   onActiveChange,
+  narrativeLevel,
 }) => {
+  // Phase 5M: sql_pending — show placeholder, not factual charts
+  if (narrativeLevel === 'sql_pending') {
+    return (
+      <div style={{ marginTop: 12, background: '#fafafa', borderRadius: 12, padding: '16px 16px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+          <BarChartOutlined style={{ color: '#4E7BF5', fontSize: 16 }} />
+          <Text strong style={{ fontSize: 13, color: '#262626' }}>
+            AI 图表建议
+          </Text>
+        </div>
+        <div
+          style={{
+            padding: '24px 0',
+            textAlign: 'center',
+            color: '#bbb',
+            fontSize: 13,
+          }}
+        >
+          ⏳ 待 SQL Workbench 验证后展示
+        </div>
+      </div>
+    )
+  }
+
   if (!chartSuggestions || chartSuggestions.length === 0) {
     return (
       <Empty

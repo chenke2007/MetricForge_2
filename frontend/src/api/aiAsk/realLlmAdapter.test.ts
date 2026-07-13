@@ -233,4 +233,68 @@ describe('RealLlmAdapter', () => {
     const adapter = RealLlmAdapter.create()
     expect(adapter.isAvailable()).toBe(true)
   })
+
+  // ── Phase 5M: METADATA_NOT_FOUND + sqlValidation ────────────────────
+
+  it('throws METADATA_NOT_FOUND when backend returns that error code', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ok: false,
+        errorCode: 'METADATA_NOT_FOUND',
+        errorMessage: '未找到所选表的元数据',
+      }),
+    })
+
+    const adapter = RealLlmAdapter.create()
+    await expect(
+      adapter.analyze('q', {
+        datasourceId: 1,
+        datasourceName: '示例数据源',
+        selectedTables: [],
+      }),
+    ).rejects.toMatchObject({
+      code: 'METADATA_NOT_FOUND',
+      message: '未找到所选表的元数据',
+    })
+  })
+
+  it('preserves details.sqlValidation in INVALID_RESPONSE error', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ok: false,
+        errorCode: 'INVALID_RESPONSE',
+        errorMessage: 'SQL 校验未通过',
+        details: {
+          sqlValidation: {
+            errors: [
+              { rule: 'FIELD_NOT_FOUND', field: 'fake', message: '字段不存在' },
+            ],
+            warnings: [],
+            sql: 'SELECT fake FROM t',
+          },
+        },
+      }),
+    })
+
+    const adapter = RealLlmAdapter.create()
+    await expect(
+      adapter.analyze('q', {
+        datasourceId: 1,
+        datasourceName: '示例数据源',
+        selectedTables: [],
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+      message: 'SQL 校验未通过',
+      details: {
+        sqlValidation: {
+          errors: [{ rule: 'FIELD_NOT_FOUND', field: 'fake', message: '字段不存在' }],
+          warnings: [],
+          sql: 'SELECT fake FROM t',
+        },
+      },
+    })
+  })
 })

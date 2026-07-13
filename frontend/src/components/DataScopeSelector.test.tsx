@@ -1,15 +1,14 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import DataScopeSelector from './DataScopeSelector'
 
-const mockSetDatasource = vi.fn()
 const mockSetSelectedTables = vi.fn()
 
 const mockStore = {
   datasourceId: null as number | null,
   datasourceName: null as string | null,
   selectedTables: [] as string[],
-  setDatasource: mockSetDatasource,
+  setDatasource: vi.fn(),
   setSelectedTables: mockSetSelectedTables,
 }
 
@@ -20,15 +19,13 @@ vi.mock('../stores/aiAskStore', () => ({
   }),
 }))
 
+const mockSearchSchema = vi.fn<(datasourceId: number | null, q: string) => any>(() => ({
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+}))
+
 vi.mock('../api/sqlWorkbench', () => ({
-  useSqlDatasources: vi.fn(() => ({
-    data: [
-      { id: 1, name: 'proddb', ds_type: 'postgresql', dialect: 'postgresql' },
-      { id: 2, name: 'dwhrpt', ds_type: 'oracle', dialect: 'oracle' },
-      { id: 3, name: 'analytics', ds_type: 'clickhouse', dialect: 'clickhouse' },
-    ],
-    isLoading: false,
-  })),
   useSchemaTree: vi.fn(() => ({
     data: {
       datasource_id: 2,
@@ -52,20 +49,31 @@ vi.mock('../api/sqlWorkbench', () => ({
     },
     isLoading: false,
   })),
+  useSearchSchema: vi.fn((datasourceId: any, q: any) => mockSearchSchema(datasourceId, q)),
 }))
+
+function setSearchResults(results: any[]) {
+  mockSearchSchema.mockReturnValue({
+    data: results,
+    isLoading: false,
+    isFetching: false,
+  })
+}
 
 describe('DataScopeSelector', () => {
   beforeEach(() => {
     cleanup()
     vi.clearAllMocks()
+    mockSearchSchema.mockReturnValue({ data: undefined, isLoading: false, isFetching: false })
     mockStore.datasourceId = null
     mockStore.datasourceName = null
     mockStore.selectedTables = []
   })
 
-  it('renders datasource selector', () => {
+  it('does not render datasource select (moved to DataScopeBar)', () => {
+    mockStore.datasourceId = 2
     render(<DataScopeSelector />)
-    expect(screen.getByText('选择数据源')).toBeInTheDocument()
+    expect(screen.queryByText('选择数据源')).not.toBeInTheDocument()
   })
 
   it('shows prompt text when no datasource selected', () => {
@@ -73,24 +81,16 @@ describe('DataScopeSelector', () => {
     expect(screen.getByText('选择数据源以查看可用表')).toBeInTheDocument()
   })
 
-  it('shows schema tables when datasource is selected', () => {
+  it('shows schema tree when datasource is selected', () => {
     mockStore.datasourceId = 2
-    mockStore.datasourceName = 'dwhrpt'
     render(<DataScopeSelector />)
-
-    // 数据源 select 显示已选值
-    expect(screen.getByTitle('dwhrpt')).toBeInTheDocument()
-
-    // "表列表 (4)" — 4 tables total across all schemas
     expect(screen.getByText(/表列表 \(4\)/)).toBeInTheDocument()
   })
 
   it('shows all table names in the collapsed list', () => {
     mockStore.datasourceId = 2
-    mockStore.datasourceName = 'dwhrpt'
     render(<DataScopeSelector />)
 
-    // Expand the collapse
     const collapseHeader = screen.getByText(/表列表 \(4\)/)
     fireEvent.click(collapseHeader)
 
@@ -102,14 +102,9 @@ describe('DataScopeSelector', () => {
 
   it('allows selecting a table from the list', () => {
     mockStore.datasourceId = 2
-    mockStore.datasourceName = 'dwhrpt'
-
     render(<DataScopeSelector />)
 
-    // Expand collapse
     fireEvent.click(screen.getByText(/表列表 \(4\)/))
-
-    // Click REVENUE
     fireEvent.click(screen.getByText('REVENUE'))
 
     expect(mockSetSelectedTables).toHaveBeenCalledWith(['REVENUE'])
@@ -117,43 +112,76 @@ describe('DataScopeSelector', () => {
 
   it('allows deselecting a table by clicking again', () => {
     mockStore.datasourceId = 2
-    mockStore.datasourceName = 'dwhrpt'
     mockStore.selectedTables = ['REVENUE', 'USERS']
 
     render(<DataScopeSelector />)
 
-    // Selected tables should be shown as tags
-    expect(screen.getByText('已选表 (2)')).toBeInTheDocument()
-    expect(screen.getByText('REVENUE')).toBeInTheDocument()
-    expect(screen.getByText('USERS')).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/表列表 \(4\)/))
+    fireEvent.click(screen.getByText('REVENUE'))
+
+    expect(mockSetSelectedTables).toHaveBeenCalledWith(['USERS'])
   })
 
-  it('removes table when tag close is clicked', () => {
+  it('calls useSearchSchema when searching', async () => {
     mockStore.datasourceId = 2
-    mockStore.datasourceName = 'dwhrpt'
-    mockStore.selectedTables = ['REVENUE']
-
     render(<DataScopeSelector />)
 
-    // Tag has a close icon (anticon-close)
-    const closeIcon = document.querySelector('.ant-tag-close-icon')
-    if (closeIcon) {
-      fireEvent.click(closeIcon)
-      expect(mockSetSelectedTables).toHaveBeenCalledWith([])
-    }
+    const input = document.querySelector('.ant-input') as HTMLInputElement
+    expect(input).toBeTruthy()
+
+    fireEvent.change(input, { target: { value: 'revenue' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => {
+      expect(mockSearchSchema).toHaveBeenCalledWith(2, 'revenue')
+    })
   })
 
-  it('calls setDatasource when a datasource is selected', () => {
+  it('displays search results grouped by matched_on', () => {
+    mockStore.datasourceId = 2
+    setSearchResults([
+      {
+        match_type: 'table',
+        matched_on: 'table_name',
+        schema_name: 'PUBLIC',
+        table_name: 'REVENUE',
+        table_comment: '收入表',
+        column_name: null,
+        table_id: 10,
+      },
+      {
+        match_type: 'column',
+        matched_on: 'column_comment',
+        schema_name: 'PUBLIC',
+        table_name: 'USERS',
+        table_comment: null,
+        column_name: 'REGION_NAME',
+        table_id: 11,
+      },
+    ])
+
     render(<DataScopeSelector />)
 
-    // Open dropdown and select dwhrpt
-    const selectInput = document.querySelector('.ant-select-selector')
-    expect(selectInput).toBeTruthy()
-    fireEvent.mouseDown(selectInput!)
+    const input = document.querySelector('.ant-input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'revenue' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
-    const dwhrptOption = screen.getByTitle('dwhrpt')
-    fireEvent.click(dwhrptOption)
+    expect(screen.getByText('表名匹配 (1)')).toBeInTheDocument()
+    expect(screen.getByText('字段注释匹配 (1)')).toBeInTheDocument()
+    expect(screen.getByText('PUBLIC.REVENUE')).toBeInTheDocument()
+    expect(screen.getByText('PUBLIC.USERS')).toBeInTheDocument()
+  })
 
-    expect(mockSetDatasource).toHaveBeenCalledWith(2, 'dwhrpt')
+  it('shows empty state when search returns no results', () => {
+    mockStore.datasourceId = 2
+    setSearchResults([])
+
+    render(<DataScopeSelector />)
+
+    const input = document.querySelector('.ant-input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'nothing' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    expect(screen.getByText(/未找到与 "nothing" 相关的表或字段/)).toBeInTheDocument()
   })
 })

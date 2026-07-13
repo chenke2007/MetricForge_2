@@ -40,6 +40,7 @@ export interface ColumnDetail {
 
 export interface SearchResult {
   match_type: 'table' | 'column'
+  matched_on: 'table_name' | 'table_comment' | 'column_name' | 'column_comment'
   schema_name: string
   table_name: string
   table_comment: string | null

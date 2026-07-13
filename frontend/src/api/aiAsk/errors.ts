@@ -3,6 +3,7 @@
 export type AiAskErrorCode =
   | 'ANALYSIS_TIMEOUT'
   | 'INVALID_RESPONSE'
+  | 'METADATA_NOT_FOUND'
   | 'NO_DATA'
   | 'ADAPTER_UNAVAILABLE'
   | 'CONTEXT_TOO_LARGE'
@@ -24,12 +25,19 @@ export class AiAskError extends Error {
   }
 }
 
-export function getAiAskErrorMessage(code: AiAskErrorCode): string {
+export function getAiAskErrorMessage(code: AiAskErrorCode, details?: Record<string, unknown>): string {
+  // INVALID_RESPONSE 携带 sqlValidation 时使用 SQL 校验专用文案
+  if (code === 'INVALID_RESPONSE' && details?.sqlValidation) {
+    return 'SQL 校验未通过，AI 生成的 SQL 存在以下问题'
+  }
+
   switch (code) {
     case 'ANALYSIS_TIMEOUT':
       return '分析超时，请简化你的问题后重试'
     case 'INVALID_RESPONSE':
       return 'AI 返回结果异常，请重试'
+    case 'METADATA_NOT_FOUND':
+      return '未找到该表元数据，请先采集元数据或选择正确的数据表'
     case 'NO_DATA':
       return '当前数据范围无可用数据'
     case 'ADAPTER_UNAVAILABLE':

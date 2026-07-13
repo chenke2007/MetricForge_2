@@ -1,6 +1,23 @@
 // frontend/src/types/aiAsk.ts
 
 export type ChartType = 'bar' | 'line' | 'pie' | 'table' | 'metric-card' | 'combo'
+
+// ── Phase 5M: Narrative Trust & SQL Validation ───────────────────────────
+
+export type NarrativeLevel = 'sql_pending' | 'executed'
+
+export interface SqlValidationError {
+  rule: string
+  message: string
+  field?: string
+  table?: string
+}
+
+export interface SqlValidationDetail {
+  errors: SqlValidationError[]
+  warnings: string[]
+  sql: string
+}
 export type Aggregation = 'sum' | 'avg' | 'count' | 'min' | 'max'
 export type ChartTheme = 'business-light' | 'executive-blue' | 'soft-gradient'
 export type GapReason = 'not_found' | 'ambiguous' | 'incomplete'
@@ -157,4 +174,7 @@ export interface AiAskResponse {
   // Phase 5H additions:
   followUp?: FollowUpQuestion
   contextSummary?: string
+  // Phase 5M additions:
+  narrativeLevel?: NarrativeLevel
+  sqlValidation?: SqlValidationDetail
 }

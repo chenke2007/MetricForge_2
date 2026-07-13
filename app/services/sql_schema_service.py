@@ -54,19 +54,29 @@ class SqlSchemaService:
         } for c in columns]
 
     def search(self, datasource_id: int, query: str, db: Session) -> list[dict]:
-        """搜索表名和字段名"""
+        """搜索表名、表注释、字段名和字段注释"""
         if not query or not query.strip():
             return []
 
         pattern = f"%{query.strip()}%"
 
-        table_results = db.query(TableMetadata).filter(
+        # 1) 表名匹配
+        table_name_results = db.query(TableMetadata).filter(
             TableMetadata.datasource_id == datasource_id,
             TableMetadata.is_active == True,
             TableMetadata.table_name.ilike(pattern),
         ).all()
 
-        col_results = db.query(
+        # 2) 表注释匹配
+        table_comment_results = db.query(TableMetadata).filter(
+            TableMetadata.datasource_id == datasource_id,
+            TableMetadata.is_active == True,
+            TableMetadata.table_comment.isnot(None),
+            TableMetadata.table_comment.ilike(pattern),
+        ).all()
+
+        # 3) 字段名匹配
+        col_name_results = db.query(
             ColumnMetadata, TableMetadata.schema_name, TableMetadata.table_name
         ).join(
             TableMetadata, ColumnMetadata.table_id == TableMetadata.id
@@ -77,10 +87,30 @@ class SqlSchemaService:
             ColumnMetadata.column_name.ilike(pattern),
         ).limit(50).all()
 
+        # 4) 字段注释匹配
+        col_comment_results = db.query(
+            ColumnMetadata, TableMetadata.schema_name, TableMetadata.table_name
+        ).join(
+            TableMetadata, ColumnMetadata.table_id == TableMetadata.id
+        ).filter(
+            TableMetadata.datasource_id == datasource_id,
+            TableMetadata.is_active == True,
+            ColumnMetadata.is_active == True,
+            ColumnMetadata.comment.isnot(None),
+            ColumnMetadata.comment.ilike(pattern),
+        ).limit(50).all()
+
+        seen = set()
         results = []
-        for t in table_results:
+
+        for t in table_name_results:
+            key = (t.id, "table_name")
+            if key in seen:
+                continue
+            seen.add(key)
             results.append({
                 "match_type": "table",
+                "matched_on": "table_name",
                 "schema_name": t.schema_name,
                 "table_name": t.table_name,
                 "table_comment": t.table_comment,
@@ -88,9 +118,44 @@ class SqlSchemaService:
                 "table_id": t.id,
             })
 
-        for col, schema_name, table_name in col_results:
+        for t in table_comment_results:
+            key = (t.id, "table_comment")
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append({
+                "match_type": "table",
+                "matched_on": "table_comment",
+                "schema_name": t.schema_name,
+                "table_name": t.table_name,
+                "table_comment": t.table_comment,
+                "column_name": None,
+                "table_id": t.id,
+            })
+
+        for col, schema_name, table_name in col_name_results:
+            key = (col.id, "column_name")
+            if key in seen:
+                continue
+            seen.add(key)
             results.append({
                 "match_type": "column",
+                "matched_on": "column_name",
+                "schema_name": schema_name,
+                "table_name": table_name,
+                "table_comment": None,
+                "column_name": col.column_name,
+                "table_id": col.table_id,
+            })
+
+        for col, schema_name, table_name in col_comment_results:
+            key = (col.id, "column_comment")
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append({
+                "match_type": "column",
+                "matched_on": "column_comment",
                 "schema_name": schema_name,
                 "table_name": table_name,
                 "table_comment": None,

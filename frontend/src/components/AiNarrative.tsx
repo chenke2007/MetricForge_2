@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Card, Typography } from 'antd'
 import { CommentOutlined } from '@ant-design/icons'
-import type { AiInsightNarrative, RiskItem, NextQuestion } from '../types/aiAsk'
+import type { AiInsightNarrative, RiskItem, NextQuestion, NarrativeLevel } from '../types/aiAsk'
 
 const { Text } = Typography
 
@@ -68,10 +68,11 @@ function renderNextQuestion(q: string | NextQuestion, i: number, onAsk?: (q: str
 
 interface AiNarrativeProps {
   narrative: AiInsightNarrative
+  narrativeLevel?: NarrativeLevel
   onAskQuestion?: (question: string) => void
 }
 
-const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) => {
+const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, narrativeLevel, onAskQuestion }) => {
   const [expandedEvidenceIndices, setExpandedEvidenceIndices] = useState<Set<number>>(new Set())
 
   const toggleEvidence = (index: number) => {
@@ -85,8 +86,13 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
       return next
     })
   }
-  const hasConclusion = narrative.conclusion && narrative.conclusion.length > 0
-  const hasEvidence = narrative.evidence && narrative.evidence.length > 0
+
+  // Phase 5M: Narrative Trust — sql_pending forces hide keyFindings, evidence, conclusion
+  const isSqlPending = narrativeLevel === 'sql_pending'
+  const showKeyFindings = !isSqlPending && narrative.keyFindings.length > 0
+  const showEvidence = !isSqlPending && narrative.evidence && narrative.evidence.length > 0
+  const showConclusion = !isSqlPending && narrative.conclusion && narrative.conclusion.length > 0
+
   const hasRisks = narrative.risks && narrative.risks.length > 0
   const hasNextQuestions = narrative.nextQuestions && narrative.nextQuestions.length > 0
 
@@ -105,8 +111,8 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         <Text strong style={{ fontSize: 13 }}>AI 解读</Text>
       </div>
 
-      {/* Conclusion (Phase 5H) */}
-      {hasConclusion && (
+      {/* Conclusion (Phase 5H) — hidden when sql_pending */}
+      {showConclusion && (
         <div
           style={{
             fontSize: 14,
@@ -142,8 +148,8 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         {narrative.summary}
       </div>
 
-      {/* 主要发现 */}
-      {narrative.keyFindings.length > 0 && (
+      {/* 主要发现 — hidden when sql_pending */}
+      {showKeyFindings && (
         <div style={{ marginBottom: 12 }}>
           <Text strong style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
             主要发现
@@ -166,8 +172,8 @@ const AiNarrative: React.FC<AiNarrativeProps> = ({ narrative, onAskQuestion }) =
         </div>
       )}
 
-      {/* Evidence (Phase 5H enhanced + Phase 5J progressive disclosure) */}
-      {hasEvidence && (
+      {/* Evidence (Phase 5H enhanced + Phase 5J progressive disclosure) — hidden when sql_pending */}
+      {showEvidence && (
         <div style={{ marginBottom: 12 }}>
           <Text strong style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 6 }}>
             证据

@@ -217,3 +217,4 @@ class TestSqlApi:
         data = resp.json()
         assert len(data) >= 1
         assert data[0]["match_type"] == "table"
+        assert data[0]["matched_on"] == "table_name"

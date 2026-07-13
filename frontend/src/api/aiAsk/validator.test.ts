@@ -463,4 +463,59 @@ describe('validateAiAskResponse', () => {
     })
     expect(result.errors.some((e) => e.path === 'followUp.confidence')).toBe(true)
   })
+
+  // ── Phase 5M: narrativeLevel / sqlValidation compatibility ───────────
+
+  it('accepts narrativeLevel sql_pending', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'sql_pending',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts narrativeLevel executed', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'executed',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('rejects invalid narrativeLevel', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'invalid_level' as any,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrativeLevel')).toBe(true)
+  })
+
+  it('accepts response without narrativeLevel (backward compat)', () => {
+    const result = validateAiAskResponse(validResponse)
+    expect(result.valid).toBe(true)
+    // ensure no narrativeLevel-related errors
+    expect(result.errors.some((e) => e.path === 'narrativeLevel')).toBe(false)
+  })
+
+  it('accepts sqlValidation as optional field', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      sqlValidation: {
+        errors: [{ rule: 'FIELD_NOT_FOUND', message: '字段不存在' }],
+        warnings: [],
+        sql: 'SELECT *',
+      },
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('rejects non-object sqlValidation', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      sqlValidation: 'bad' as any,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'sqlValidation')).toBe(true)
+  })
 })

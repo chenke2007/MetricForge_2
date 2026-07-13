@@ -27,7 +27,7 @@ cryptography>=41.0.0
 openai>=1.0.0
 
 # === SQL 解析（阶段 2 启用） ===
-# sqlglot>=20.0.0
+sqlglot>=25.0.0
 
 # === 开发工具 ===
 pytest>=7.4.0

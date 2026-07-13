@@ -5,8 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { message } from 'antd'
 import AskWorkbenchPage from './AskWorkbenchPage'
 
-const { mockedAnalyze } = vi.hoisted(() => ({
+const { mockedAnalyze, mockNavigateToExternal } = vi.hoisted(() => ({
   mockedAnalyze: vi.fn(),
+  mockNavigateToExternal: vi.fn(),
 }))
 
 // --- Mocks ---
@@ -120,8 +121,13 @@ vi.mock('../api/aiAsk', async () => {
   }
 })
 
+// Mock navigation util for spy assertions
+vi.mock('../utils/navigation', () => ({
+  navigateToExternal: mockNavigateToExternal,
+}))
+
 vi.mock('../components/SessionList', () => ({
-  default: () => <div data-testid="session-list">SessionList</div>,
+  default: (props: any) => <div data-testid="session-list">SessionList{props.compact ? ' (compact)' : ''}</div>,
 }))
 
 vi.mock('../components/MessageThread', () => ({
@@ -138,6 +144,17 @@ vi.mock('../components/AgentNav', () => ({
 
 vi.mock('../components/DataScopeSelector', () => ({
   default: () => <div data-testid="data-scope-selector">DataScopeSelector</div>,
+}))
+
+vi.mock('../components/DataScopeBar', () => ({
+  default: (props: any) => (
+    <div data-testid="data-scope-bar">
+      DataScopeBar
+      <button data-testid="toggle-sider-btn" onClick={props.onToggleCollapse} type="button">
+        Toggle
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('../components/PromptCards', () => ({
@@ -188,11 +205,15 @@ vi.mock('../components/SqlPlan', () => ({
 }))
 
 vi.mock('../components/AiChartBoard', () => ({
-  default: () => <div data-testid="ai-chart-board">AiChartBoard</div>,
+  default: (props: any) => (
+    <div data-testid="ai-chart-board">
+      AiChartBoard{props?.narrativeLevel === 'sql_pending' ? ' (sql_pending)' : ''}
+    </div>
+  ),
 }))
 
 vi.mock('../components/AiNarrative', () => ({
-  default: () => <div data-testid="ai-narrative">AiNarrative</div>,
+  default: (props: any) => <div data-testid="ai-narrative">AiNarrative{props?.narrativeLevel === 'sql_pending' ? ' (sql_pending)' : ''}</div>,
 }))
 
 vi.mock('../components/ContextChain', () => ({
@@ -275,6 +296,24 @@ describe('AskWorkbenchPage', () => {
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('agent-nav')).toBeInTheDocument()
     expect(screen.getByTestId('data-scope-selector')).toBeInTheDocument()
+    expect(screen.getByTestId('data-scope-bar')).toBeInTheDocument()
+  })
+
+  it('renders SessionList in compact mode', () => {
+    renderPage()
+    expect(screen.getByText('SessionList (compact)')).toBeInTheDocument()
+  })
+
+  it('toggles sider collapse via DataScopeBar', () => {
+    renderPage()
+
+    const sider = document.querySelector('.ant-layout-sider')
+    expect(sider).toBeTruthy()
+    expect(sider?.classList.contains('ant-layout-sider-collapsed')).toBe(false)
+
+    fireEvent.click(screen.getByTestId('toggle-sider-btn'))
+
+    expect(sider?.classList.contains('ant-layout-sider-collapsed')).toBe(true)
   })
 
   it('shows empty state when no session selected', () => {
@@ -595,6 +634,96 @@ describe('AskWorkbenchPage', () => {
       await waitFor(() => {
         expect(mockedAnalyze).toHaveBeenCalled()
       })
+    })
+  })
+
+  // ── Phase 5M: Narrative Trust & Error UI tests ─────────────────
+
+  describe('Phase 5M Narrative Trust UI', () => {
+    it('shows metadata guidance when storeError.code is METADATA_NOT_FOUND', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('表元数据未采集')).toBeInTheDocument()
+      expect(screen.getByText('请先采集元数据或选择已采集的数据表')).toBeInTheDocument()
+    })
+
+    it('navigates to /web/datasources when metadata guidance button is clicked', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      renderPage()
+      const button = screen.getByText('前往数据源管理').closest('button')!
+      expect(button).toBeInTheDocument()
+      fireEvent.click(button)
+      expect(mockNavigateToExternal).toHaveBeenCalledWith('/web/datasources')
+    })
+
+    it('does NOT render result area when METADATA_NOT_FOUND', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'METADATA_NOT_FOUND', message: '元数据未找到', name: 'AiAskError' }
+      renderPage()
+      expect(screen.queryByTestId('intent-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sql-plan')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-chart-board')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-narrative')).not.toBeInTheDocument()
+    })
+
+    it('shows SqlValidationAlert when INVALID_RESPONSE with details.sqlValidation', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = {
+        code: 'INVALID_RESPONSE',
+        message: 'SQL 校验未通过',
+        name: 'AiAskError',
+        details: {
+          sqlValidation: {
+            errors: [{ rule: 'FIELD_NOT_FOUND', message: '字段 region 在表中不存在' }],
+            warnings: [],
+            sql: 'SELECT region FROM t',
+          },
+        },
+      }
+      renderPage()
+      expect(screen.getByText('字段 region 在表中不存在')).toBeInTheDocument()
+    })
+
+    it('does NOT render result area when INVALID_RESPONSE with sqlValidation', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = makeMockResponse()
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = {
+        code: 'INVALID_RESPONSE',
+        message: 'SQL 校验未通过',
+        name: 'AiAskError',
+        details: {
+          sqlValidation: {
+            errors: [{ rule: 'FIELD_NOT_FOUND', message: '字段 region 不存在' }],
+            warnings: [],
+            sql: 'SELECT region FROM t',
+          },
+        },
+      }
+      renderPage()
+      expect(screen.queryByTestId('intent-card')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sql-plan')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-chart-board')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('ai-narrative')).not.toBeInTheDocument()
+    })
+
+    it('shows default error alert for other error codes', () => {
+      mockAskStore.currentSessionId = 1
+      mockAiAskState.currentResponse = null
+      mockAiAskState.isAnalyzing = false
+      mockAiAskState.error = { code: 'ANALYSIS_TIMEOUT', message: '超时', name: 'AiAskError' }
+      renderPage()
+      expect(screen.getByText('分析异常')).toBeInTheDocument()
     })
   })
 })
