@@ -31,10 +31,12 @@ def datasource_with_tables(db_session):
     c1 = ColumnMetadata(
         table_id=t1.id, column_name="ORDER_ID", column_type="NUMBER",
         nullable=False, column_id=1, is_primary_key=True, is_active=True,
+        comment="订单主键",
     )
     c2 = ColumnMetadata(
         table_id=t1.id, column_name="CUSTOMER_ID", column_type="NUMBER",
         nullable=True, column_id=2, is_active=True,
+        comment="客户编号",
     )
     db_session.add_all([c1, c2])
     db_session.commit()
@@ -88,15 +90,29 @@ class TestSearch:
         ds, t1, t2 = datasource_with_tables
         results = service.search(ds.id, "ORDER", db_session)
         assert len(results) >= 1
-        names = [r["table_name"] for r in results if r["match_type"] == "table"]
-        assert "T_ORDER" in names
+        match = [r for r in results if r["matched_on"] == "table_name"]
+        assert any(r["table_name"] == "T_ORDER" for r in match)
+
+    def test_search_by_table_comment(self, service, datasource_with_tables, db_session):
+        ds, t1, t2 = datasource_with_tables
+        results = service.search(ds.id, "订单", db_session)
+        assert len(results) >= 1
+        match = [r for r in results if r["matched_on"] == "table_comment"]
+        assert any(r["table_name"] == "T_ORDER" for r in match)
 
     def test_search_by_column_name(self, service, datasource_with_tables, db_session):
         ds, t1, t2 = datasource_with_tables
-        results = service.search(ds.id, "CUSTOMER", db_session)
+        results = service.search(ds.id, "CUSTOMER_ID", db_session)
         assert len(results) >= 1
-        col_matches = [r for r in results if r["match_type"] == "column"]
-        assert len(col_matches) >= 1
+        match = [r for r in results if r["matched_on"] == "column_name"]
+        assert any(r["column_name"] == "CUSTOMER_ID" for r in match)
+
+    def test_search_by_column_comment(self, service, datasource_with_tables, db_session):
+        ds, t1, t2 = datasource_with_tables
+        results = service.search(ds.id, "客户", db_session)
+        assert len(results) >= 1
+        match = [r for r in results if r["matched_on"] == "column_comment"]
+        assert any(r["column_name"] == "CUSTOMER_ID" for r in match)
 
     def test_search_empty_query(self, service, datasource_with_tables, db_session):
         ds, t1, t2 = datasource_with_tables

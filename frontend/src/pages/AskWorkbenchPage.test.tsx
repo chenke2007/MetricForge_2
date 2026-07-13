@@ -127,7 +127,7 @@ vi.mock('../utils/navigation', () => ({
 }))
 
 vi.mock('../components/SessionList', () => ({
-  default: () => <div data-testid="session-list">SessionList</div>,
+  default: (props: any) => <div data-testid="session-list">SessionList{props.compact ? ' (compact)' : ''}</div>,
 }))
 
 vi.mock('../components/MessageThread', () => ({
@@ -144,6 +144,17 @@ vi.mock('../components/AgentNav', () => ({
 
 vi.mock('../components/DataScopeSelector', () => ({
   default: () => <div data-testid="data-scope-selector">DataScopeSelector</div>,
+}))
+
+vi.mock('../components/DataScopeBar', () => ({
+  default: (props: any) => (
+    <div data-testid="data-scope-bar">
+      DataScopeBar
+      <button data-testid="toggle-sider-btn" onClick={props.onToggleCollapse} type="button">
+        Toggle
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('../components/PromptCards', () => ({
@@ -285,6 +296,24 @@ describe('AskWorkbenchPage', () => {
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('agent-nav')).toBeInTheDocument()
     expect(screen.getByTestId('data-scope-selector')).toBeInTheDocument()
+    expect(screen.getByTestId('data-scope-bar')).toBeInTheDocument()
+  })
+
+  it('renders SessionList in compact mode', () => {
+    renderPage()
+    expect(screen.getByText('SessionList (compact)')).toBeInTheDocument()
+  })
+
+  it('toggles sider collapse via DataScopeBar', () => {
+    renderPage()
+
+    const sider = document.querySelector('.ant-layout-sider')
+    expect(sider).toBeTruthy()
+    expect(sider?.classList.contains('ant-layout-sider-collapsed')).toBe(false)
+
+    fireEvent.click(screen.getByTestId('toggle-sider-btn'))
+
+    expect(sider?.classList.contains('ant-layout-sider-collapsed')).toBe(true)
   })
 
   it('shows empty state when no session selected', () => {

@@ -6,6 +6,7 @@ import SessionList from '../components/SessionList'
 import MessageThread from '../components/MessageThread'
 import AgentNav from '../components/AgentNav'
 import DataScopeSelector from '../components/DataScopeSelector'
+import DataScopeBar from '../components/DataScopeBar'
 import PromptCards from '../components/PromptCards'
 import AskInput from '../components/AskInput'
 import IntentCard from '../components/IntentCard'
@@ -224,6 +225,7 @@ const AskWorkbenchPage: React.FC = () => {
   }, [navigate])
 
   const [agentMode] = React.useState('ask')
+  const [siderCollapsed, setSiderCollapsed] = React.useState(false)
 
   const showEmptyState = !currentSessionId
   const showWelcomeState = currentSessionId && !currentResponse && !isAnalyzing && !storeError
@@ -231,26 +233,31 @@ const AskWorkbenchPage: React.FC = () => {
 
   return (
     <Layout style={{ height: 'calc(100vh - 104px)', background: '#fff' }}>
-      {/* Left sidebar */}
+      {/* Left sidebar — collapsible */}
       <Sider
-        width={220}
+        width={260}
+        collapsedWidth={0}
+        collapsed={siderCollapsed}
+        trigger={null}
         style={{
           background: '#fafafa',
           borderRight: '1px solid #f0f0f0',
-          overflow: 'auto',
+          overflow: 'hidden',
+          transition: 'all 0.2s',
         }}
       >
-        <div style={{ padding: '0 12px' }}>
+        <div style={{ padding: '0 12px', overflow: 'auto', height: '100%' }}>
           <DataScopeSelector />
-        </div>
-        <div style={{ padding: '0 12px' }}>
-          <SessionList
-            currentId={currentSessionId}
-            onSelect={(id) => {
-              setCurrentSession(id || null)
-              if (!id) setCurrentResponse(null)
-            }}
-          />
+          <div style={{ marginBottom: 0 }}>
+            <SessionList
+              compact
+              currentId={currentSessionId}
+              onSelect={(id) => {
+                setCurrentSession(id || null)
+                if (!id) setCurrentResponse(null)
+              }}
+            />
+          </div>
         </div>
       </Sider>
 
@@ -294,6 +301,12 @@ const AskWorkbenchPage: React.FC = () => {
             />
           </Tooltip>
         </div>
+
+        {/* Data scope bar — below agent nav */}
+        <DataScopeBar
+          siderCollapsed={siderCollapsed}
+          onToggleCollapse={() => setSiderCollapsed((v) => !v)}
+        />
 
         {/* Empty state */}
         {showEmptyState && (
