@@ -110,6 +110,61 @@ def _extract_columns_from_sql(tree) -> list[str]:
     return columns
 
 
+def _extract_columns_with_quoted(tree) -> list[tuple[str, bool]]:
+    """从 AST 提取字段名及其是否显式加双引号。
+
+    返回 (列名, quoted) 元组列表（去重，保留原始大小写）。
+    排除 * 号。quoted 用于区分 Oracle 未加引号（大小写不敏感）
+    与显式加引号（大小写敏感）的标识符。
+    """
+    out: list[tuple[str, bool]] = []
+    seen: set[str] = set()
+
+    for node in tree.find_all(exp.Column):
+        col_name = node.name
+        if not col_name or col_name == "*":
+            continue
+        key = col_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        quoted = bool(node.this.quoted) if isinstance(node.this, exp.Identifier) else False
+        out.append((col_name, quoted))
+
+    return out
+
+
+def _projection_aliases(select) -> set[str]:
+    """提取单个 SELECT 块的投影别名（小写集合）。"""
+    aliases: set[str] = set()
+    for expr in select.expressions:
+        if isinstance(expr, exp.Alias):
+            aliases.add(expr.alias.lower())
+    return aliases
+
+
+def _order_by_alias_columns(tree) -> set[str]:
+    """收集 ORDER BY 中未限定、且匹配本 SELECT 块投影别名的列名（小写）。
+
+    Oracle 允许在 ORDER BY 中引用 SELECT 投影别名。这些别名引用是合法的，
+    不应触发 FIELD_NOT_FOUND。仅作用于同 SELECT 块的 ORDER BY，且必须是未限定列。
+    """
+    allowed: set[str] = set()
+    for select in tree.find_all(exp.Select):
+        aliases = _projection_aliases(select)
+        if not aliases:
+            continue
+        order = select.args.get("order")
+        if order is None:
+            continue
+        for col in order.find_all(exp.Column):
+            if col.table:  # 限定列（如 a.x）必须指向真实字段
+                continue
+            if col.name.lower() in aliases:
+                allowed.add(col.name.lower())
+    return allowed
+
+
 def has_ddl(sql: str) -> bool:
     """检查 SQL 是否包含 DDL/DML 操作。
 
@@ -346,6 +401,8 @@ class SqlValidator:
 
         # ── 步骤 3: 提取 SQL 中的字段引用 ──────────────────────────────────
         sql_columns = _extract_columns_from_sql(tree)
+        # ORDER BY 中引用本块 SELECT 投影别名是合法的，不应报 FIELD_NOT_FOUND
+        order_by_aliases = _order_by_alias_columns(tree)
 
         # ── 校验 1: DDL_DML_NOT_ALLOWED ────────────────────────────────────
         if has_ddl(sql):
@@ -368,6 +425,9 @@ class SqlValidator:
         # 检查 SQL 中提取的字段（排除分区字段本身和函数调用产生的伪字段）
         for col in sql_columns:
             if col == "*":
+                continue
+            # ORDER BY 中的投影别名引用是合法的，跳过
+            if col.lower() in order_by_aliases:
                 continue
             if not meta_index.column_exists(col):
                 errors.append({
@@ -438,28 +498,24 @@ class SqlValidator:
                     })
 
         # ── 校验 6: CASE_MISMATCH ──────────────────────────────────────────
-        # 检查 sql_plan.fields 中的大小写
-        for field in plan_fields:
-            if not field.strip():
-                continue
-            original = meta_index.get_original_column_name(field.lower())
-            if original and original != field:
-                errors.append({
-                    "rule": "CASE_MISMATCH",
-                    "field": field,
-                    "message": f"字段「{field}」大小写不匹配，元数据中为「{original}」",
-                })
+        # Oracle 未加引号标识符大小写不敏感，因此：
+        # - sql_plan.fields 视为未加引号，不再做大小写校验；
+        # - SQL AST 中仅显式加双引号的标识符才严格区分大小写。
+        # 只有 quoted=True 且大小写与元数据不一致时才报 CASE_MISMATCH。
 
-        # 检查 SQL 中提取的字段大小写
-        for col in sql_columns:
+        # 检查 SQL AST 中显式加引号的字段大小写
+        for col, quoted in _extract_columns_with_quoted(tree):
             if col == "*":
+                continue
+            if not quoted:
+                # 未加引号：Oracle 大小写不敏感，跳过
                 continue
             original = meta_index.get_original_column_name(col.lower())
             if original and original != col:
                 errors.append({
                     "rule": "CASE_MISMATCH",
                     "field": col,
-                    "message": f"SQL 中字段「{col}」大小写不匹配，元数据中为「{original}」",
+                    "message": f"字段「{col}」大小写不匹配，元数据中为「{original}」",
                 })
 
         return SqlValidationResult(

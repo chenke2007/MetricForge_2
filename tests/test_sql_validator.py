@@ -79,6 +79,28 @@ def mixed_metadata(base_table, dim_table):
     return [base_table, dim_table]
 
 
+@pytest.fixture
+def real_table():
+    """真实验收表：DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M（镜像实测元数据）。
+
+    返回单元素列表，与 SqlValidator.validate 的 resolved_metadata 入参一致。
+    """
+    columns = [
+        ResolvedColumn(column_name="PT", column_type="VARCHAR", comment="分区字段", is_partition=True),
+        ResolvedColumn(column_name="VC_DIQYMC", column_type="VARCHAR", comment="地区名称"),
+        ResolvedColumn(column_name="DEC_XIAOSE", column_type="NUMBER", comment="销售额"),
+        ResolvedColumn(column_name="VC_KEHFL", column_type="VARCHAR", comment="客户分类"),
+    ]
+    return [ResolvedTableMetadata(
+        schema_name="DWHRPT",
+        table_name="DWS_RPT_ZCPZ_CYFL_TF_M",
+        table_comment="投放资产分类月度快照表",
+        columns=columns,
+        field_semantics=[],
+        table_rule_hints=[],
+    )]
+
+
 # ── 测试 SQL 辅助函数 ──────────────────────────────────────────────────────────
 
 
@@ -299,10 +321,14 @@ class TestSqlValidator:
         assert "UNKNOWN_TABLE_REFERENCE" in rule_names
 
     def test_case_mismatch(self, mixed_metadata):
-        """元数据为大写但 SQL 用小写引用 → CASE_MISMATCH"""
+        """元数据为大写但 SQL 用加引号小写引用 → CASE_MISMATCH
+
+        注意：未加引号标识符在 Oracle 中大小写不敏感，不应报 CASE_MISMATCH；
+        此处使用显式加双引号的标识符，仍应严格区分大小写。
+        """
         sql_plan = {
-            "sql": "SELECT amt FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE pt='20260630'",
-            "fields": ["amt"],
+            "sql": 'SELECT "amt" FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE "pt"=\'20260630\'',
+            "fields": [],
             "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
         }
         result = SqlValidator.validate(sql_plan, mixed_metadata)
@@ -426,3 +452,109 @@ class TestSqlValidationResult:
         assert d["errors"] == []
         assert d["warnings"] == []
         assert d["sql"] == "SELECT 1"
+
+
+class TestOracleIdentifierHandling:
+    """Oracle 标识符大小写与 SQL 别名作用域专项测试（Phase 5M blocker 窄修复）。
+
+    Oracle 未加引号标识符大小写不敏感；显式加双引号才严格区分。
+    ORDER BY 中的投影别名仅在本 SELECT 块内豁免 FIELD_NOT_FOUND，
+    WHERE/JOIN/SELECT 表达式及跨块同名引用仍按真实字段校验。
+    """
+
+    def test_unquoted_field_case_insensitive(self, real_table):
+        """未加引号 pt 引用大写 PT 元数据 → 不产生 CASE_MISMATCH，整体校验通过。"""
+        sql_plan = {
+            "sql": "SELECT VC_DIQYMC, DEC_XIAOSE FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE pt='20260630'",
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        rule_names = [e["rule"] for e in result.errors]
+        assert "CASE_MISMATCH" not in rule_names
+        assert result.valid is True
+
+    def test_sql_plan_fields_case_insensitive(self, real_table):
+        """sql_plan.fields 使用 pt（小写），元数据为 PT → 不产生 CASE_MISMATCH。"""
+        sql_plan = {
+            "sql": "SELECT VC_DIQYMC FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE PT='20260630'",
+            "fields": ["pt", "VC_DIQYMC"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        rule_names = [e["rule"] for e in result.errors]
+        assert "CASE_MISMATCH" not in rule_names
+        assert result.valid is True
+
+    def test_quoted_field_still_case_sensitive(self, real_table):
+        """加引号 "pt" 引用大写 PT 元数据 → 仍产生 CASE_MISMATCH。"""
+        sql_plan = {
+            "sql": 'SELECT VC_DIQYMC FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE "pt"=\'20260630\'',
+            "fields": [],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        rule_names = [e["rule"] for e in result.errors]
+        assert "CASE_MISMATCH" in rule_names
+
+        # 加引号 "PT" 大小写一致 → 不产生 CASE_MISMATCH
+        sql_plan_ok = {
+            "sql": 'SELECT VC_DIQYMC FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE "PT"=\'20260630\'',
+            "fields": [],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result_ok = SqlValidator.validate(sql_plan_ok, real_table)
+        rule_names_ok = [e["rule"] for e in result_ok.errors]
+        assert "CASE_MISMATCH" not in rule_names_ok
+
+    def test_order_by_alias_not_flagged(self, real_table):
+        """ORDER BY 引用本块 SELECT 投影别名 total_amount → 不产生 FIELD_NOT_FOUND。"""
+        sql_plan = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE pt='20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY total_amount DESC"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert not any("total_amount" in e.get("field", "") for e in field_errs)
+        # 完整真实场景应当整体通过（未加引号 pt + ORDER BY 别名均不误报）
+        assert result.valid is True
+
+    def test_alias_exemption_not_overbroad(self, real_table):
+        """别名豁免过宽防护：WHERE 与普通 ORDER BY 中的非别名引用仍须报 FIELD_NOT_FOUND。"""
+        # WHERE 中引用 total_amount（非别名作用域）→ 仍应 FIELD_NOT_FOUND
+        sql_where = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE pt='20260630' AND total_amount > 0 "
+                "GROUP BY VC_DIQYMC"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result_where = SqlValidator.validate(sql_where, real_table)
+        where_errs = [e for e in result_where.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("total_amount" in e.get("field", "") for e in where_errs)
+
+        # ORDER BY 引用不存在的 fake_alias（非投影别名）→ 仍应 FIELD_NOT_FOUND
+        sql_fake = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE pt='20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY fake_alias"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result_fake = SqlValidator.validate(sql_fake, real_table)
+        fake_errs = [e for e in result_fake.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("fake_alias" in e.get("field", "") for e in fake_errs)
