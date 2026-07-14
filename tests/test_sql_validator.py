@@ -526,35 +526,231 @@ class TestOracleIdentifierHandling:
         # 完整真实场景应当整体通过（未加引号 pt + ORDER BY 别名均不误报）
         assert result.valid is True
 
-    def test_alias_exemption_not_overbroad(self, real_table):
-        """别名豁免过宽防护：WHERE 与普通 ORDER BY 中的非别名引用仍须报 FIELD_NOT_FOUND。"""
-        # WHERE 中引用 total_amount（非别名作用域）→ 仍应 FIELD_NOT_FOUND
-        sql_where = {
+class TestStrictAliasAndQuotedScope:
+    """严格 AST 作用域专项测试（Phase 5M blocker follow-up 窄修复）。
+
+    验证以下两类缺陷必须被修复：
+    1. ORDER BY 别名豁免不能是全 SQL 字符串白名单，必须绑定到本 SELECT 块。
+    2. quoted/unquoted 同名字段不能按名称去重，必须按具体 AST Column 节点分别校验。
+    """
+
+    def test_valid_select_with_order_by_alias(self, real_table):
+        """测试 A：合法 SQL。ORDER BY 引用本 SELECT 块的投影别名，不应误报任何校验错误。"""
+        sql_plan = {
             "sql": (
                 "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
                 "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
-                "WHERE pt='20260630' AND total_amount > 0 "
-                "GROUP BY VC_DIQYMC"
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY total_amount"
             ),
             "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
             "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
         }
-        result_where = SqlValidator.validate(sql_where, real_table)
-        where_errs = [e for e in result_where.errors if e["rule"] == "FIELD_NOT_FOUND"]
-        assert any("total_amount" in e.get("field", "") for e in where_errs)
+        result = SqlValidator.validate(sql_plan, real_table)
+        assert result.valid is True, f"应通过，但错误：{result.errors}"
+        assert len(result.errors) == 0
 
-        # ORDER BY 引用不存在的 fake_alias（非投影别名）→ 仍应 FIELD_NOT_FOUND
-        sql_fake = {
+    def test_where_alias_same_select_is_still_illegal(self, real_table):
+        """测试 B：故意非法 SQL。
+
+        同层 SELECT 投影别名 total_amount 虽然能合法出现在 ORDER BY 中，
+        但 WHERE 子句不能引用 SELECT 投影别名。本测试用于证明全局 alias 白名单会过宽。
+        """
+        sql_plan = {
             "sql": (
                 "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
                 "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
-                "WHERE pt='20260630' "
+                "WHERE PT = '20260630' AND total_amount > 0 "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY total_amount"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("total_amount" in e.get("field", "") for e in field_errs), (
+            "WHERE 中的 total_amount 不是合法别名引用，必须报 FIELD_NOT_FOUND"
+        )
+        # ORDER BY 合法不应改变结论：WHERE 中的 total_amount 必须被拦截
+        assert result.valid is False
+
+    def test_quoted_and_unquoted_same_name_distinct(self, real_table):
+        """测试 C：同一条 SQL 中同时出现未加引号 PT 和加引号 \"pt\"。
+
+        未加引号 PT 合法；加引号 \"pt\" 大小写与元数据 PT 不一致，必须产生 CASE_MISMATCH。
+        """
+        sql_plan = {
+            "sql": (
+                "SELECT PT, \"pt\", VC_DIQYMC "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630'"
+            ),
+            "fields": ["VC_DIQYMC"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        case_errs = [e for e in result.errors if e["rule"] == "CASE_MISMATCH"]
+        assert any("pt" in e.get("field", "") for e in case_errs), (
+            "加引号 \"pt\" 与元数据 PT 大小写不一致，必须被单独识别为 CASE_MISMATCH"
+        )
+
+    def test_quoted_correct_case_no_mismatch(self, real_table):
+        """测试 D：加引号 \"PT\" 与元数据 PT 完全一致，不应产生 CASE_MISMATCH。"""
+        sql_plan = {
+            "sql": (
+                'SELECT "PT", VC_DIQYMC FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M '
+                "WHERE \"PT\" = '20260630'"
+            ),
+            "fields": ["VC_DIQYMC"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        rule_names = [e["rule"] for e in result.errors]
+        assert "CASE_MISMATCH" not in rule_names
+        assert result.valid is True
+
+    def test_alias_scope_isolated_across_select_blocks(self, real_table):
+        """测试 E：跨 SELECT 查询块别名隔离。
+
+        内层 SELECT 的投影别名 total_amount 只能在内层自己的 ORDER BY 中合法使用；
+        外层 WHERE 中的 total_amount 与内层 alias 无关，必须报 FIELD_NOT_FOUND。
+        这是故意非法的防御性测试，用于证明全局 alias 集合会跨块泄漏。
+        """
+        sql_plan = {
+            "sql": (
+                "SELECT outer_t.VC_DIQYMC, "
+                "(SELECT SUM(inner_t.DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M inner_t "
+                "WHERE inner_t.PT = '20260630' "
+                "ORDER BY total_amount) AS nested_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M outer_t "
+                "WHERE outer_t.PT = '20260630' AND total_amount > 0"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("total_amount" in e.get("field", "") for e in field_errs), (
+            "外层 WHERE 中的 total_amount 与内层 SELECT 的 alias 无关，必须报 FIELD_NOT_FOUND"
+        )
+        assert result.valid is False
+
+    def test_order_by_nonexistent_alias_still_field_not_found(self, real_table):
+        """测试 F：ORDER BY 引用不存在的 fake_alias，必须报 FIELD_NOT_FOUND。"""
+        sql_plan = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
                 "GROUP BY VC_DIQYMC "
                 "ORDER BY fake_alias"
             ),
             "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
             "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
         }
-        result_fake = SqlValidator.validate(sql_fake, real_table)
-        fake_errs = [e for e in result_fake.errors if e["rule"] == "FIELD_NOT_FOUND"]
-        assert any("fake_alias" in e.get("field", "") for e in fake_errs)
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("fake_alias" in e.get("field", "") for e in field_errs)
+        assert result.valid is False
+
+    def test_order_by_nested_select_does_not_inherit_outer_alias(self, real_table):
+        """测试 G：ORDER BY 子树中的嵌套 SELECT 不得继承外层 alias。
+
+        外层 SELECT 的投影别名 total_amount 只能在外层自己的 ORDER BY 中合法引用。
+        嵌套 SELECT 中的 total_amount 不是该别名引用，必须报 FIELD_NOT_FOUND。
+        """
+        sql_plan = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY ( "
+                "    SELECT total_amount "
+                "    FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M inner_t "
+                "    WHERE inner_t.PT = '20260630' "
+                ")"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("total_amount" in e.get("field", "") for e in field_errs), (
+            "嵌套 SELECT 中的 total_amount 不是外层 alias，必须报 FIELD_NOT_FOUND"
+        )
+        assert result.valid is False
+
+    def test_unquoted_alias_referenced_by_uppercase_quoted(self, real_table):
+        """测试 H：未加引号 alias 可被大写 quoted 引用。"""
+        sql_plan = {
+            "sql": (
+                "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount "
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                'ORDER BY "TOTAL_AMOUNT"'
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        assert result.valid is True, f"应通过，但错误：{result.errors}"
+        assert len(result.errors) == 0
+
+    def test_uppercase_quoted_alias_referenced_by_unquoted(self, real_table):
+        """测试 I：大写 quoted alias 可被未加引号引用。"""
+        sql_plan = {
+            "sql": (
+                'SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS "TOTAL_AMOUNT" '
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY TOTAL_AMOUNT"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        assert result.valid is True, f"应通过，但错误：{result.errors}"
+        assert len(result.errors) == 0
+
+    def test_lowercase_quoted_alias_not_referenced_by_unquoted(self, real_table):
+        """测试 J：小写 quoted alias 不可被未加引号引用。"""
+        sql_plan = {
+            "sql": (
+                'SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS "total_amount" '
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                "ORDER BY total_amount"
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        field_errs = [e for e in result.errors if e["rule"] == "FIELD_NOT_FOUND"]
+        assert any("total_amount" in e.get("field", "") for e in field_errs), (
+            "小写 quoted alias total_amount 被未加引号引用时，必须报 FIELD_NOT_FOUND"
+        )
+        assert result.valid is False
+
+    def test_lowercase_quoted_alias_referenced_by_quoted_same_name(self, real_table):
+        """测试 K：小写 quoted alias 可被同名 quoted 引用。"""
+        sql_plan = {
+            "sql": (
+                'SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS "total_amount" '
+                "FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M "
+                "WHERE PT = '20260630' "
+                "GROUP BY VC_DIQYMC "
+                'ORDER BY "total_amount"'
+            ),
+            "fields": ["VC_DIQYMC", "DEC_XIAOSE"],
+            "tables": ["DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M"],
+        }
+        result = SqlValidator.validate(sql_plan, real_table)
+        assert result.valid is True, f"应通过，但错误：{result.errors}"
+        assert len(result.errors) == 0
