@@ -297,4 +297,58 @@ describe('RealLlmAdapter', () => {
       },
     })
   })
+
+  // ── Phase 5M: sql_pending 真实响应回归（浏览器 blocker 复现结构）─────
+
+  const sqlPendingBody = {
+    ok: true,
+    data: {
+      question: '分析小微各区域投放金额情况',
+      intent: {
+        metrics: ['投放金额'],
+        dimensions: ['区域'],
+        filters: ['PT = 20260630'],
+        timeRange: undefined,
+      },
+      sqlPlan: {
+        datasourceId: 2,
+        datasourceName: 'dwhrpt',
+        sql: "SELECT VC_DIQYMC, SUM(DEC_XIAOSE) AS total_amount FROM DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M WHERE PT = '20260630' GROUP BY VC_DIQYMC ORDER BY total_amount",
+        tables: ['DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M'],
+        fields: ['VC_DIQYMC', 'DEC_XIAOSE', 'PT'],
+        assumptions: [],
+        safetyWarnings: [],
+      },
+      chartSuggestions: [
+        { title: '各区域投放金额', chartType: 'bar', xField: 'VC_DIQYMC', yFields: ['total_amount'], rationale: 'r', limitations: [] },
+      ],
+      narrative: {
+        summary: '已生成待验证 SQL，请在 SQL Workbench 中验证后查看结论。',
+        keyFindings: [],
+        evidence: [],
+        risks: [],
+        nextQuestions: [],
+        conclusion: undefined,
+      },
+      semanticGaps: [],
+      narrativeLevel: 'sql_pending',
+    },
+  }
+
+  it('accepts real sql_pending response (no INVALID_RESPONSE throw)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => sqlPendingBody,
+    })
+
+    const adapter = RealLlmAdapter.create()
+    const result = await adapter.analyze('分析小微各区域投放金额情况', {
+      datasourceId: 2,
+      datasourceName: 'dwhrpt',
+      selectedTables: ['DWHRPT.DWS_RPT_ZCPZ_CYFL_TF_M'],
+    })
+
+    expect(result.narrativeLevel).toBe('sql_pending')
+    expect(result.narrative.evidence).toEqual([])
+  })
 })

@@ -518,4 +518,74 @@ describe('validateAiAskResponse', () => {
     expect(result.valid).toBe(false)
     expect(result.errors.some((e) => e.path === 'sqlValidation')).toBe(true)
   })
+
+  // ── Phase 5M: sql_pending 允许 evidence 为空 ─────────────────────────
+
+  const sqlPendingEmptyEvidence: AiAskResponse = {
+    question: '各区域销售额',
+    intent: { metrics: ['销售额'], dimensions: ['区域'], filters: [], timeRange: '近 30 天' },
+    sqlPlan: {
+      datasourceId: 2,
+      datasourceName: 'dwhrpt',
+      sql: 'SELECT * FROM t',
+      tables: ['t'],
+      fields: ['a'],
+      assumptions: [],
+      safetyWarnings: [],
+    },
+    resultSummary: { rowCount: 10, durationMs: 100 },
+    chartSuggestions: [
+      { title: '图', chartType: 'bar', xField: 'x', yFields: ['y'], rationale: 'r', limitations: [] },
+    ],
+    narrative: {
+      summary: '已生成待验证 SQL，请在 SQL Workbench 中验证后查看结论。',
+      keyFindings: [],
+      evidence: [],
+      risks: [],
+      nextQuestions: [],
+    },
+    semanticGaps: [],
+    narrativeLevel: 'sql_pending',
+  }
+
+  it('accepts sql_pending + empty evidence (valid=true)', () => {
+    const result = validateAiAskResponse(sqlPendingEmptyEvidence)
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(false)
+  })
+
+  it('rejects sql_pending with missing evidence field (legacy structure broken)', () => {
+    const { evidence: _drop, ...narrative } = sqlPendingEmptyEvidence.narrative
+    const result = validateAiAskResponse({
+      ...sqlPendingEmptyEvidence,
+      narrative: narrative as any,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects sql_pending with non-array evidence', () => {
+    const result = validateAiAskResponse({
+      ...sqlPendingEmptyEvidence,
+      narrative: { ...sqlPendingEmptyEvidence.narrative, evidence: null as any },
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects executed + empty evidence (executed contract preserved)', () => {
+    const result = validateAiAskResponse({
+      ...sqlPendingEmptyEvidence,
+      narrativeLevel: 'executed',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects legacy response (no narrativeLevel) + empty evidence (Phase 5K contract preserved)', () => {
+    const { narrativeLevel: _drop, ...rest } = sqlPendingEmptyEvidence
+    const result = validateAiAskResponse(rest as any)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
 })

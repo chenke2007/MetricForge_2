@@ -110,6 +110,96 @@ def _extract_columns_from_sql(tree) -> list[str]:
     return columns
 
 
+def _extract_column_refs(tree) -> list[tuple[exp.Column, str, bool]]:
+    """从 AST 提取所有 Column 引用，保留节点身份、名称和 quoted 状态。
+
+    返回 [(Column node, 列名, quoted)], 不去重。同一 SQL 中 quoted 与 unquoted
+    同名字段被视为不同 AST 引用，应分别校验。
+    """
+    refs: list[tuple[exp.Column, str, bool]] = []
+    for node in tree.find_all(exp.Column):
+        col_name = node.name
+        if not col_name or col_name == "*":
+            continue
+        quoted = bool(node.this.quoted) if isinstance(node.this, exp.Identifier) else False
+        refs.append((node, col_name, quoted))
+    return refs
+
+
+def _collect_projection_aliases(select: exp.Select) -> list[tuple[str, bool]]:
+    """提取单个 SELECT 查询块中的显式投影别名 (name, quoted)。"""
+    aliases: list[tuple[str, bool]] = []
+    for expr in select.expressions:
+        if not isinstance(expr, exp.Alias):
+            continue
+        alias_arg = expr.args.get("alias")
+        if isinstance(alias_arg, exp.Identifier):
+            aliases.append((alias_arg.name, bool(alias_arg.quoted)))
+        elif alias_arg:
+            aliases.append((str(alias_arg), False))
+        elif expr.alias:
+            aliases.append((expr.alias, False))
+    return aliases
+
+
+def _oracle_identifier_key(name: str, quoted: bool) -> str:
+    """按 Oracle 规则规范化标识符。
+
+    - 未加引号标识符：Oracle 自动转大写
+    - 显式加双引号标识符：保持原样
+    """
+    return name if quoted else name.upper()
+
+
+def _identifier_matches(name: str, quoted: bool, aliases: list[tuple[str, bool]]) -> bool:
+    """按 Oracle 标识符规则判断 name 是否与 aliases 中某一项匹配。
+
+    未加引号与全大写加引号等价；小写加引号与未加引号不等价。
+    """
+    key = _oracle_identifier_key(name, quoted)
+    return any(_oracle_identifier_key(alias_name, alias_quoted) == key for alias_name, alias_quoted in aliases)
+
+
+def _nearest_select(node: exp.Expression) -> exp.Select | None:
+    """返回节点最近的 exp.Select 祖先。如果不在任何 SELECT 内，返回 None。"""
+    parent = node.parent
+    while parent is not None:
+        if isinstance(parent, exp.Select):
+            return parent
+        parent = parent.parent
+    return None
+
+
+def _order_by_alias_column_ids(tree) -> set[int]:
+    """收集各 SELECT 块自己的 ORDER BY 中合法引用本块投影别名的 Column 节点 id。
+
+    只豁免同时满足以下条件的 Column：
+    1. 无表限定（table 为空）
+    2. 位于当前 SELECT 查询块自己的 ORDER BY 子树
+    3. 最近的 exp.Select 祖先就是当前 SELECT（防止嵌套子查询中的列被错误继承）
+    4. 匹配该 SELECT 的投影别名
+
+    不跨 SELECT 块共享 alias 白名单。
+    """
+    allowed: set[int] = set()
+    for select in tree.find_all(exp.Select):
+        aliases = _collect_projection_aliases(select)
+        if not aliases:
+            continue
+        order = select.args.get("order")
+        if order is None:
+            continue
+        for col in order.find_all(exp.Column):
+            if col.table:
+                continue
+            if _nearest_select(col) is not select:
+                continue
+            quoted = bool(col.this.quoted) if isinstance(col.this, exp.Identifier) else False
+            if _identifier_matches(col.name, quoted, aliases):
+                allowed.add(id(col))
+    return allowed
+
+
 def has_ddl(sql: str) -> bool:
     """检查 SQL 是否包含 DDL/DML 操作。
 
@@ -345,7 +435,10 @@ class SqlValidator:
         real_tables = _extract_real_tables(tree, cte_names)
 
         # ── 步骤 3: 提取 SQL 中的字段引用 ──────────────────────────────────
-        sql_columns = _extract_columns_from_sql(tree)
+        # 保留 Column AST 节点身份、quoted 状态，用于后续 FIELD_NOT_FOUND 和 CASE_MISMATCH
+        column_refs = _extract_column_refs(tree)
+        # ORDER BY 中引用本块 SELECT 投影别名是合法的，不应报 FIELD_NOT_FOUND
+        allowed_alias_ids = _order_by_alias_column_ids(tree)
 
         # ── 校验 1: DDL_DML_NOT_ALLOWED ────────────────────────────────────
         if has_ddl(sql):
@@ -365,15 +458,18 @@ class SqlValidator:
                     "message": f"字段「{field}」不存在于已解析的元数据表中",
                 })
 
-        # 检查 SQL 中提取的字段（排除分区字段本身和函数调用产生的伪字段）
-        for col in sql_columns:
-            if col == "*":
+        # 检查 SQL 中提取的字段引用（按 AST 节点分别处理）
+        for col_node, col_name, _quoted in column_refs:
+            if col_name == "*":
                 continue
-            if not meta_index.column_exists(col):
+            # 仅当该 Column 节点确实位于其所属 SELECT 自己的 ORDER BY 且匹配本块别名时，才豁免
+            if id(col_node) in allowed_alias_ids:
+                continue
+            if not meta_index.column_exists(col_name):
                 errors.append({
                     "rule": "FIELD_NOT_FOUND",
-                    "field": col,
-                    "message": f"SQL 中引用的字段「{col}」不存在于已解析的元数据表中",
+                    "field": col_name,
+                    "message": f"SQL 中引用的字段「{col_name}」不存在于已解析的元数据表中",
                 })
 
         # ── 校验 3: TABLE_SCHEMA_MISSING ────────────────────────────────────
@@ -438,28 +534,26 @@ class SqlValidator:
                     })
 
         # ── 校验 6: CASE_MISMATCH ──────────────────────────────────────────
-        # 检查 sql_plan.fields 中的大小写
-        for field in plan_fields:
-            if not field.strip():
-                continue
-            original = meta_index.get_original_column_name(field.lower())
-            if original and original != field:
-                errors.append({
-                    "rule": "CASE_MISMATCH",
-                    "field": field,
-                    "message": f"字段「{field}」大小写不匹配，元数据中为「{original}」",
-                })
+        # Oracle 未加引号标识符大小写不敏感，因此：
+        # - sql_plan.fields 视为未加引号，不再做大小写校验；
+        # - SQL AST 中仅显式加双引号的标识符才严格区分大小写。
+        # 只有 quoted=True 且大小写与元数据不一致时才报 CASE_MISMATCH。
 
-        # 检查 SQL 中提取的字段大小写
-        for col in sql_columns:
-            if col == "*":
+        # 检查 SQL AST 中显式加引号的字段大小写。
+        # Oracle 未加引号标识符大小写不敏感；只有显式加双引号才严格区分。
+        # 按 AST 节点逐个校验，不去重，确保 quoted/unquoted 同名字段都能被检查。
+        for _col_node, col_name, quoted in column_refs:
+            if col_name == "*":
                 continue
-            original = meta_index.get_original_column_name(col.lower())
-            if original and original != col:
+            if not quoted:
+                # 未加引号：Oracle 大小写不敏感，跳过
+                continue
+            original = meta_index.get_original_column_name(col_name.lower())
+            if original and original != col_name:
                 errors.append({
                     "rule": "CASE_MISMATCH",
-                    "field": col,
-                    "message": f"SQL 中字段「{col}」大小写不匹配，元数据中为「{original}」",
+                    "field": col_name,
+                    "message": f"字段「{col_name}」大小写不匹配，元数据中为「{original}」",
                 })
 
         return SqlValidationResult(

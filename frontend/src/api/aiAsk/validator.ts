@@ -168,8 +168,15 @@ export function validateAiAskResponse(response: unknown): ValidationResult {
       warnings.push('narrative.keyFindings 为空')
     }
 
-    if (!Array.isArray(narrative.evidence) || narrative.evidence.length === 0) {
-      errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为非空数组', severity: 'error' })
+    const isSqlPending = response.narrativeLevel === 'sql_pending'
+
+    if (!Array.isArray(narrative.evidence)) {
+      errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为数组', severity: 'error' })
+    } else if (narrative.evidence.length === 0) {
+      // sql_pending：SQL 尚未执行，后端必须清空 keyFindings/evidence，空数组合法。
+      if (!isSqlPending) {
+        errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为非空数组', severity: 'error' })
+      }
     } else {
       for (let i = 0; i < narrative.evidence.length; i++) {
         const item = narrative.evidence[i]
