@@ -1,8 +1,11 @@
 import json
 import logging
 from openai import OpenAI
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from ...models import LlmSetting
+from ...models.ask_models import AskMessage
 from ..key_encryption import decrypt
 from .metadata_resolver import MetadataResolver
 from .prompt_builder import AiAskPromptBuilder
@@ -54,7 +57,87 @@ def _sanitize_narrative_for_sql_pending(narrative: dict) -> dict:
 
 
 class AiAskLlmService:
-    def analyze(self, request: dict, db) -> AiAskAnalyzeSuccessResponse | AiAskAnalyzeErrorResponse:
+    def analyze(self, request: dict, db: Session) -> AiAskAnalyzeSuccessResponse | AiAskAnalyzeErrorResponse:
+        """公共入口：精确消息绑定 + response_json 持久化 + 异常恢复。
+
+        身份校验（session/role/status）必须先只读完成，校验失败不得修改任何记录。
+        身份合法后，_analyze_core 的业务错误、HTTPException 和普通异常
+        都会把这条精确 assistant message 标记为 failed。
+        """
+        session_id = request.get("session_id")
+        assistant_message_id = request.get("assistant_message_id")
+
+        # ── 只读身份校验（失败不得修改记录）────────────────────────────────
+        msg = db.query(AskMessage).filter(AskMessage.id == assistant_message_id).first()
+        if not msg:
+            raise HTTPException(404, detail="message not found")
+        if msg.session_id != session_id:
+            raise HTTPException(422, detail="session mismatch")
+        if msg.role != "assistant":
+            raise HTTPException(422, detail="wrong role")
+        if msg.status != "pending":
+            raise HTTPException(422, detail="status not pending")
+
+        # ── 身份合法：后续失败可更新这条精确消息 ────────────────────────────
+        bound_msg = msg
+
+        try:
+            analysis_result = self._analyze_core(request, db)
+
+            if not analysis_result.ok:
+                bound_msg.status = "failed"
+                bound_msg.error_message = analysis_result.error_message or "analysis failed"
+                db.commit()
+                return analysis_result
+
+            # 成功：持久化版本化 response_json
+            response_json = json.dumps({
+                "schemaVersion": 1,
+                "data": analysis_result.data,
+            }, ensure_ascii=False)
+            bound_msg.response_json = response_json
+            bound_msg.status = "completed"
+            bound_msg.error_message = None
+            db.commit()
+            return analysis_result
+        except HTTPException:
+            self._mark_failed_best_effort(db, assistant_message_id, session_id)
+            raise
+        except Exception:
+            self._mark_failed_best_effort(db, assistant_message_id, session_id)
+            raise
+
+    def _mark_failed_best_effort(self, db: Session, message_id: int, session_id: int) -> None:
+        """Best-effort 标记 assistant message 为 failed。
+
+        rollback → 按主键重新加载 → 校验 session/role → 标记 failed → commit。
+        成功或失败均不向调用者抛异常，保证 analyze() 的裸 raise 始终重新抛出原异常。
+        """
+        try:
+            db.rollback()
+            fresh = db.query(AskMessage).filter(
+                AskMessage.id == message_id,
+                AskMessage.session_id == session_id,
+                AskMessage.role == "assistant",
+            ).first()
+            if not fresh:
+                return
+            fresh.status = "failed"
+            fresh.error_message = "analysis failed"
+            db.commit()
+        except Exception:
+            logger.exception("Failed to persist assistant message failure state")
+            try:
+                db.rollback()
+            except Exception:
+                logger.exception("Rollback also failed while marking assistant message failed")
+
+    def _analyze_core(self, request: dict, db) -> AiAskAnalyzeSuccessResponse | AiAskAnalyzeErrorResponse:
+        """核心 LLM 分析流程（无会话/身份绑定逻辑）。
+
+        即原 analyze() 的完整流程：metadata resolve → OpenAI → normalizer →
+        validator → SQL Trust Gate → sanitize。由公共 analyze() 调用。
+        """
         # ── Step 0: 检查 LLM 配置 ──────────────────────────────────────────
         active = db.query(LlmSetting).filter(LlmSetting.is_active == 1).first()
         if not active:

@@ -1,8 +1,32 @@
 """Full-flow integration tests for SQL Workbench API"""
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 from app.models import DatasourceConfig, TableMetadata, ColumnMetadata
+from app.adapters.base import DataSourceAdapter, QueryResult
+from tests.support.sql_worker_factories import success_factory
+
+
+# Top-level picklable factory for integration test
+class _Col1Adapter(DataSourceAdapter):
+    def connect(self):
+        return self
+
+    def test_connection(self):
+        return True
+
+    def execute_query(self, sql, params=None):
+        return QueryResult(columns=["COL1"], rows=[[42]], row_count=1)
+
+    def close(self):
+        pass
+
+    def get_dialect(self):
+        return "fake"
+
+
+def col1_factory(request):
+    """顶层可 pickle factory，返回 COL1 列。"""
+    return _Col1Adapter({})
 
 
 @pytest.fixture
@@ -11,7 +35,16 @@ def client(tmp_path):
     db_path = tmp_path / "test_integration.db"
     from app.main import create_app
     app = create_app(database_url=f"sqlite:///{db_path}")
-    return TestClient(app)
+    # Patch the module-level execution_service to use test factory
+    from app.api.sql_workbench import execution_service as _svc
+    # save defaults for teardown
+    _saved = (_svc._adapter_factory, _svc._cleanup_callback, _svc._temp_root)
+    _svc._adapter_factory = col1_factory
+    _svc._cleanup_callback = None
+    _svc._temp_root = str(tmp_path)
+    yield TestClient(app)
+    # teardown — restore defaults to avoid singleton pollution
+    _svc._adapter_factory, _svc._cleanup_callback, _svc._temp_root = _saved
 
 
 @pytest.fixture
@@ -32,7 +65,8 @@ class TestFullFlow:
         # 1. Create datasource
         ds = DatasourceConfig(
             name="集成测试数据源", ds_type="oracle", host="127.0.0.1",
-            port=1521, username="ro", dialect="oracle", is_active=True,
+            port=1521, username="ro", password_enc="secret",
+            dialect="oracle", is_active=True,
         )
         db_session.add(ds)
         db_session.flush()
@@ -71,23 +105,15 @@ class TestFullFlow:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
-        # 6. Execute (mock adapter)
-        with patch('app.services.sql_execution_service.get_adapter_for_datasource') as mock_get:
-            mock_adapter = MagicMock()
-            mock_adapter.execute_query.return_value = MagicMock(
-                columns=["COL1"], rows=[[42]], row_count=1, error=None,
-            )
-            mock_adapter.name = "集成测试数据源"
-            mock_get.return_value = mock_adapter
-
-            resp = client.post("/api/sql/execute", json={
-                "datasource_id": ds_id,
-                "sql": "SELECT COL1 FROM T_TEST",
-            })
-            assert resp.status_code == 200
-            exec_result = resp.json()
-            assert exec_result["columns"] == ["COL1"]
-            assert exec_result["row_count"] == 1
+        # 6. Execute (col1 factory)
+        resp = client.post("/api/sql/execute", json={
+            "datasource_id": ds_id,
+            "sql": "SELECT COL1 FROM T_TEST",
+        })
+        assert resp.status_code == 200
+        exec_result = resp.json()
+        assert exec_result["columns"] == ["COL1"]
+        assert exec_result["row_count"] == 1
 
         # 7. History
         resp = client.get("/api/sql/history")

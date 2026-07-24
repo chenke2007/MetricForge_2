@@ -26,10 +26,14 @@ def test_request_schema_accepts_minimal_payload():
         "datasourceName": "示例数据源",
         "selectedTables": ["sales"],
         "messageHistory": [],
+        "sessionId": 1,
+        "assistantMessageId": 1,
     }
     req = AiAskAnalyzeRequest(**payload)
     assert req.question == "各区域销售额排名"
     assert req.datasource_id == 1
+    assert req.session_id == 1
+    assert req.assistant_message_id == 1
 
 
 def test_error_response_schema():
@@ -279,7 +283,7 @@ def _make_valid_llm_response_json(question="各区域投放金额排名") -> str
 def test_analyze_returns_llm_not_configured_when_no_active_setting():
     db = _mock_db_with_active(active=None)
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.LLM_NOT_CONFIGURED
 
@@ -299,7 +303,7 @@ def test_analyze_returns_success_for_valid_llm_response(mock_decrypt, mock_opena
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is True
     assert result.data["question"] == "各区域投放金额排名"
     assert result.data.get("narrativeLevel") == "sql_pending"
@@ -324,7 +328,7 @@ def test_analyze_sends_system_and_user_messages(mock_decrypt, mock_openai_cls, m
 
     svc = AiAskLlmService()
     request = make_request()
-    result = svc.analyze(request, db=db)
+    result = svc._analyze_core(request, db=db)
     assert result.ok is True
 
     # Assert messages sent to OpenAI contain both system and user roles
@@ -353,7 +357,7 @@ def test_analyze_returns_invalid_response_for_bad_json(mock_decrypt, mock_openai
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 
@@ -427,7 +431,7 @@ def test_analyze_overrides_sqlplan_datasource_with_request(mock_decrypt, mock_op
 
     svc = AiAskLlmService()
     request = make_request_dwhrpt()
-    result = svc.analyze(request, db=db)
+    result = svc._analyze_core(request, db=db)
 
     assert result.ok is True
     assert result.data["sqlPlan"]["datasourceId"] == 2
@@ -461,7 +465,7 @@ def test_analyze_does_not_create_sqlplan_when_missing(mock_decrypt, mock_openai_
 
     svc = AiAskLlmService()
     request = make_request_dwhrpt()
-    result = svc.analyze(request, db=db)
+    result = svc._analyze_core(request, db=db)
 
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
@@ -470,20 +474,35 @@ def test_analyze_does_not_create_sqlplan_when_missing(mock_decrypt, mock_openai_
 # ── HTTP serialization tests (camelCase aliases via FastAPI) ──────────────
 
 
-@pytest.fixture
-def client():
-    """FastAPI TestClient with fresh in-memory database for ai_ask endpoint tests."""
+def _post_analyze_no_active_llm():
+    """Seed a session + pending assistant message (no active LLM), POST /analyze,
+    return the HTTP response."""
     import tempfile
     from pathlib import Path
-    db_path = Path(tempfile.mktemp(suffix=".db"))
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
     from app.main import create_app
     from fastapi.testclient import TestClient
+    from app.models.ask_models import AskSession, AskMessage
 
-    return TestClient(create_app(database_url=f"sqlite:///{db_path}"))
+    db_path = Path(tempfile.mktemp(suffix=".db"))
+    app = create_app(database_url=f"sqlite:///{db_path}")
+    client = TestClient(app)
 
+    engine = create_engine(f"sqlite:///{db_path}")
+    Session = sessionmaker(bind=engine)
+    seed = Session()
+    s = AskSession(title="t", model_name="gpt")
+    seed.add(s)
+    seed.flush()
+    m = AskMessage(session_id=s.id, role="assistant", status="pending", content="")
+    seed.add(m)
+    seed.commit()
+    session_id, msg_id = s.id, m.id
+    seed.close()
+    engine.dispose()
 
-def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm(client):
-    resp = client.post(
+    return client.post(
         "/api/ai-ask/analyze",
         json={
             "question": "sales by region",
@@ -491,8 +510,14 @@ def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm(client
             "datasourceName": "dwhrpt",
             "selectedTables": ["sales"],
             "messageHistory": [],
+            "sessionId": session_id,
+            "assistantMessageId": msg_id,
         },
     )
+
+
+def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm():
+    resp = _post_analyze_no_active_llm()
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is False
@@ -505,17 +530,8 @@ def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm(client
     assert "error_message" not in data
 
 
-def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm(client):
-    resp = client.post(
-        "/api/ai-ask/analyze",
-        json={
-            "question": "sales by region",
-            "datasourceId": 1,
-            "datasourceName": "dwhrpt",
-            "selectedTables": ["sales"],
-            "messageHistory": [],
-        },
-    )
+def test_analyze_returns_200_with_error_code_camelcase_when_no_active_llm_duplicate():
+    resp = _post_analyze_no_active_llm()
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is False
@@ -568,7 +584,7 @@ def test_analyze_returns_invalid_response_when_choices_empty(mock_decrypt, mock_
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 
@@ -588,7 +604,7 @@ def test_analyze_returns_invalid_response_when_message_missing(mock_decrypt, moc
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 
@@ -608,7 +624,7 @@ def test_analyze_returns_invalid_response_when_content_empty(mock_decrypt, mock_
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 
@@ -628,7 +644,7 @@ def test_analyze_returns_invalid_response_when_content_none(mock_decrypt, mock_o
     mock_openai_cls.return_value = mock_client
 
     svc = AiAskLlmService()
-    result = svc.analyze(make_request(), db=db)
+    result = svc._analyze_core(make_request(), db=db)
     assert result.ok is False
     assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
 
@@ -1004,7 +1020,7 @@ class TestAiAskLlmServiceIntegration:
         db = _mock_db_with_active(active=_make_active_setting())
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is False
         assert result.error_code == AiAskErrorCode.METADATA_NOT_FOUND
         assert "未找到所选表的元数据" in result.error_message
@@ -1025,7 +1041,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is True
 
         # Check that system prompt contains metadata
@@ -1069,7 +1085,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is False
         assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
         assert result.details is not None
@@ -1110,7 +1126,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is False
         assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
         assert result.details is not None
@@ -1151,7 +1167,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is False
         assert result.error_code == AiAskErrorCode.INVALID_RESPONSE
         assert result.details is not None
@@ -1175,7 +1191,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is True
         assert result.data.get("narrativeLevel") == "sql_pending"
 
@@ -1195,7 +1211,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request(), db=db)
+        result = svc._analyze_core(make_request(), db=db)
         assert result.ok is True
 
         narrative = result.data["narrative"]
@@ -1234,7 +1250,7 @@ class TestAiAskLlmServiceIntegration:
         mock_openai_cls.return_value = mock_client
 
         svc = AiAskLlmService()
-        result = svc.analyze(make_request_dwhrpt(), db=db)
+        result = svc._analyze_core(make_request_dwhrpt(), db=db)
         assert result.ok is True
         assert result.data["sqlPlan"]["datasourceId"] == 2
         assert result.data["sqlPlan"]["datasourceName"] == "dwhrpt"

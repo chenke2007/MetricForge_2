@@ -1,5 +1,6 @@
 """Application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -12,9 +13,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import loader as config_loader
 from .models import init_db, init_tables
 from .services.metadata_scheduler_runtime import start_metadata_scheduler, stop_metadata_scheduler
+from .services.sql_temp_janitor import start_sql_temp_janitor, stop_sql_temp_janitor
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/metricforge.db"
+logger = logging.getLogger(__name__)
 
 
 def _resolve_database_url(database_url: str | None = None, config_path: str | None = None) -> str:
@@ -70,8 +73,20 @@ def create_app(config_path: str | None = None, database_url: str | None = None) 
     async def lifespan(app: FastAPI):
         start_metadata_scheduler(app)
         try:
+            started = start_sql_temp_janitor(app)
+            if not started:
+                logger.warning("SQL temp janitor not accepting: thread alive but stop_event set")
+        except Exception:
+            logger.warning("SQL temp janitor start failed", exc_info=True)
+        try:
             yield
         finally:
+            try:
+                stopped = stop_sql_temp_janitor(app)
+                if not stopped:
+                    logger.warning("SQL temp janitor did not stop cleanly")
+            except Exception:
+                logger.warning("SQL temp janitor stop failed", exc_info=True)
             stop_metadata_scheduler(app)
 
     app = FastAPI(title="MetricForge", version="0.1.0", lifespan=lifespan)

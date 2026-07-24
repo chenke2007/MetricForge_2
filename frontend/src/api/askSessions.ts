@@ -132,6 +132,21 @@ export function useCreateMessage() {
   })
 }
 
+export function useUpdateSessionTitle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, title }: { id: number; title: string }) =>
+      apiFetch<AskSession>(`/ask/sessions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ title }),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['askSessions'] })
+      qc.invalidateQueries({ queryKey: ['askSessions', variables.id] })
+    },
+  })
+}
+
 export function useDeleteSession() {
   const qc = useQueryClient()
   return useMutation({

@@ -19,6 +19,21 @@ from .ask_tools.executor import ToolExecutor
 logger = logging.getLogger(__name__)
 
 
+def _safe_load_response_json(raw: str | None) -> dict | None:
+    """安全加载 response_json，版本不兼容或解析失败时返回 None。"""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return None
+        if parsed.get("schemaVersion") != 1:
+            return None
+        return parsed
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
 class AskService:
     """AI 问数会话与消息服务"""
 
@@ -383,6 +398,7 @@ class AskService:
             "error_message": m.error_message,
             "tokens_prompt": m.tokens_prompt,
             "tokens_completion": m.tokens_completion,
+            "response_json": _safe_load_response_json(m.response_json),
             "created_at": m.created_at.isoformat(),
         }
         if include_tool_calls:

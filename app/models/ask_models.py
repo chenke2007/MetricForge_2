@@ -51,6 +51,7 @@ class AskMessage(Base):
     error_message = Column(Text, nullable=True)
     tokens_prompt = Column(Integer, nullable=True)
     tokens_completion = Column(Integer, nullable=True)
+    response_json = Column(Text, nullable=True)  # 版本化 AiAskResponse JSON
     created_at = Column(DateTime, nullable=False, default=_utcnow)
 
     tool_calls = relationship(

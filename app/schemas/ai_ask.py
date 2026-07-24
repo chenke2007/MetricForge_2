@@ -11,6 +11,7 @@ class AiAskErrorCode(str, Enum):
     LLM_AUTH_ERROR = "LLM_AUTH_ERROR"
     LLM_CONNECTION_ERROR = "LLM_CONNECTION_ERROR"
     LLM_RATE_LIMIT = "LLM_RATE_LIMIT"
+    EXECUTION_ERROR = "EXECUTION_ERROR"
     UNKNOWN = "UNKNOWN"
 
 
@@ -20,6 +21,8 @@ class AiAskAnalyzeRequest(BaseModel):
     datasource_name: str = Field(..., alias="datasourceName")
     selected_tables: list[str] = Field(default_factory=list, alias="selectedTables")
     message_history: list[dict[str, Any]] = Field(default_factory=list, alias="messageHistory")
+    session_id: int = Field(..., alias="sessionId")
+    assistant_message_id: int = Field(..., alias="assistantMessageId")
 
     model_config = {"populate_by_name": True}
 
@@ -36,3 +39,10 @@ class AiAskAnalyzeErrorResponse(BaseModel):
     details: dict[str, Any] | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class AiAskExecuteSqlRequest(BaseModel):
+    session_id: int = Field(..., alias="sessionId")
+    assistant_message_id: int = Field(..., alias="assistantMessageId")
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}

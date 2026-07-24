@@ -11,6 +11,7 @@ export type AiAskErrorCode =
   | 'LLM_AUTH_ERROR'
   | 'LLM_NOT_CONFIGURED'
   | 'LLM_RATE_LIMIT'
+  | 'EXECUTION_ERROR'
   | 'UNKNOWN'
 
 export class AiAskError extends Error {
@@ -34,6 +35,8 @@ export function getAiAskErrorMessage(code: AiAskErrorCode, details?: Record<stri
   switch (code) {
     case 'ANALYSIS_TIMEOUT':
       return '分析超时，请简化你的问题后重试'
+    case 'EXECUTION_ERROR':
+      return 'SQL 执行出错，请稍后重试'
     case 'INVALID_RESPONSE':
       return 'AI 返回结果异常，请重试'
     case 'METADATA_NOT_FOUND':

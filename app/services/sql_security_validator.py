@@ -167,9 +167,14 @@ class SqlSecurityValidator:
         return False, ""
 
     def apply_row_limit(self, sql: str) -> str:
-        """Oracle 适配：外层 SELECT * 包裹 + ROWNUM 限制"""
+        """Oracle 适配：外层 SELECT * 包裹 + ROWNUM 限制
+
+        使用 MAX_RESULT_ROWS + 1 作为 sentinel row：
+        Oracle 返回最多 1001 行，serializer 截断至 1000 并标记 truncated。
+        恰好 1000 行 → truncated=False；1001 行 → truncated=True。
+        """
         cleaned = sql.rstrip('; \t\n\r')
-        return f"SELECT * FROM ({cleaned}) WHERE ROWNUM <= {self.MAX_RESULT_ROWS}"
+        return f"SELECT * FROM ({cleaned}) WHERE ROWNUM <= {self.MAX_RESULT_ROWS + 1}"
 
     @staticmethod
     def compute_sql_hash(sql: str) -> str:

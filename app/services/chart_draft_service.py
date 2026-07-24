@@ -30,7 +30,10 @@ class ChartDraftService:
         return self._to_dict(draft, db)
 
     def list(self, db: Session) -> list[dict]:
-        drafts = db.query(ChartDraft).order_by(ChartDraft.updated_at.desc()).all()
+        drafts = db.query(ChartDraft).order_by(
+            ChartDraft.updated_at.desc(),
+            ChartDraft.id.desc(),
+        ).all()
         return [self._to_dict(d, db) for d in drafts]
 
     def get(self, draft_id: int, db: Session) -> dict | None:

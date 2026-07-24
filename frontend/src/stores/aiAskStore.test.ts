@@ -19,11 +19,17 @@ describe('aiAskStore', () => {
 
   it('has new 5G fields with defaults', () => {
     const state = useAiAskStore.getState()
-    expect(state.adapterName).toBe('MockAdapter')
+    expect(state.adapterName).toBe('RealLlmAdapter')
     expect(state.analysisStep).toBe(0)
     expect(state.error).toBeNull()
     expect(state.responseValidation).toBeNull()
     expect(state.isExecuting).toBe(false)
+  })
+
+  it('no longer exposes useRealLlm or setUseRealLlm (Task 5: mock mode removed)', () => {
+    const state = useAiAskStore.getState() as unknown as Record<string, unknown>
+    expect('useRealLlm' in state).toBe(false)
+    expect('setUseRealLlm' in state).toBe(false)
   })
 
   it('setAnalysisStep updates step', () => {
@@ -55,20 +61,32 @@ describe('aiAskStore', () => {
     expect(useAiAskStore.getState().activeChartIndex).toBe(0)
   })
 
-  it('should save and retrieve response history', () => {
-    useAiAskStore.getState().saveResponseForMessage(1, MOCK_RESPONSE as any)
-    const retrieved = useAiAskStore.getState().getResponseForMessage(1)
-    expect(retrieved).toEqual(MOCK_RESPONSE)
-    expect(useAiAskStore.getState().getResponseForMessage(999)).toBeUndefined()
+  it('has currentAssistantMessageId default null', () => {
+    const state = useAiAskStore.getState()
+    expect(state.currentAssistantMessageId).toBeNull()
+  })
+
+  it('setCurrentAssistantMessageId updates id', () => {
+    useAiAskStore.getState().setCurrentAssistantMessageId(42)
+    expect(useAiAskStore.getState().currentAssistantMessageId).toBe(42)
+  })
+
+  it('setCurrentAssistantMessageId resets to null', () => {
+    useAiAskStore.getState().setCurrentAssistantMessageId(42)
+    useAiAskStore.getState().setCurrentAssistantMessageId(null)
+    expect(useAiAskStore.getState().currentAssistantMessageId).toBeNull()
   })
 
   it('should reset to initial state', () => {
     useAiAskStore.getState().setDatasource(2, 'dwhrpt')
     useAiAskStore.getState().setCurrentResponse(MOCK_RESPONSE as any)
+    useAiAskStore.getState().setCurrentAssistantMessageId(42)
     useAiAskStore.getState().reset()
     const state = useAiAskStore.getState()
     expect(state.datasourceId).toBeNull()
     expect(state.currentResponse).toBeNull()
     expect(state.analysisStep).toBe(0)
+    expect(state.currentAssistantMessageId).toBeNull()
+    expect(state.adapterName).toBe('RealLlmAdapter')
   })
 })

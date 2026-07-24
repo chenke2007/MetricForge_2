@@ -11,6 +11,44 @@ export interface ChartRecommendationInput {
     filters: string[]
     timeRange?: string
   }
+  /** Phase 5N Task 6.5D: 后端列类型标签；存在且与 columns 等长时优先于运行时推断 */
+  columnTypes?: string[]
+}
+
+// ── Phase 5N Task 6.5D: columnTypes 类型判断与 Decimal 安全保护 ────────
+
+/** 可作为数值轴（yField）参与绘图的列类型 */
+export const NUMERIC_COLUMN_TYPES: readonly string[] = ['int', 'float', 'decimal']
+
+/** 明确不可图表化的列类型（类型未知/混合/非数值语义） */
+export const NON_CHARTABLE_COLUMN_TYPES: readonly string[] = [
+  'mixed', 'unknown', 'bytes', 'bool', 'null',
+]
+
+export function isNumericColumnType(columnType: string | undefined): boolean {
+  return columnType !== undefined && NUMERIC_COLUMN_TYPES.includes(columnType)
+}
+
+/**
+ * JS Number 安全精度：最多 15 位有效数字可保证无精度损失。
+ * 后端将 Decimal 序列化为精确字符串，超过安全精度直接 Number() 会静默丢精度。
+ */
+const MAX_SAFE_SIGNIFICANT_DIGITS = 15
+
+/** 判断值是否为超出 JS Number 安全精度的 Decimal 字符串（fail closed） */
+export function isUnsafeDecimalString(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const s = value.trim()
+  const m = /^[+-]?(\d+)(\.\d+)?([eE][+-]?\d+)?$/.exec(s)
+  if (!m) return false
+  if (!Number.isFinite(Number(s))) return true
+  const significantDigits = (m[1] + (m[2] ? m[2].slice(1) : '')).replace(/^0+/, '')
+  return significantDigits.length > MAX_SAFE_SIGNIFICANT_DIGITS
+}
+
+/** 检查指定列在行数据中是否存在超出安全精度的 Decimal 值 */
+export function hasUnsafeDecimalValues(rows: any[][], columnIndex: number): boolean {
+  return rows.some((row) => isUnsafeDecimalString(row[columnIndex]))
 }
 
 /**
@@ -19,7 +57,7 @@ export interface ChartRecommendationInput {
  * Uses question keywords + intent + data shape to determine chart types.
  */
 export function recommendCharts(input: ChartRecommendationInput): AiChartSpec[] {
-  const { columns, sampleRows, question, intent } = input
+  const { columns, sampleRows, question, intent, columnTypes } = input
   const combinedText = [question, ...intent.metrics, ...intent.dimensions, ...intent.filters, intent.timeRange || ''].join(' ')
 
   const hasTime = /趋势|走势|月度|季度|月变化|环比|逐月|近.*月|近.*年|时间|日期|week|month|trend/i.test(combinedText)
@@ -27,10 +65,25 @@ export function recommendCharts(input: ChartRecommendationInput): AiChartSpec[] 
   const hasRank = /top|排名|前.*名|排行|最高|最多|前十|前五|top/i.test(combinedText)
   const hasDetail = /明细|详细|清单|list|detail|全部数据/i.test(combinedText)
   const metricCount = intent.metrics.length
+  // Phase 5N Task 6.5D: columnTypes 存在且等长时以其为准（decimal 视为数值），
+  // 否则回退到原有的运行时推断
+  const hasColumnTypes = Array.isArray(columnTypes) && columnTypes.length === columns.length
   const numericColumns = columns.filter((_col, ci) => {
+    if (hasColumnTypes) return isNumericColumnType(columnTypes[ci])
     const samples = sampleRows.map(r => r[ci])
     return samples.some(v => typeof v === 'number')
   })
+
+  // Phase 5N Task 6.5D: columnTypes 明确且没有任何数值列（mixed/unknown 等），
+  // 不产出可能误导的图表，直接降级为表格
+  if (hasColumnTypes && numericColumns.length === 0) {
+    return [{
+      title: '数据明细', chartType: 'table',
+      yFields: columns,
+      rationale: '字段类型为 mixed/unknown 等非数值类型，不适合图表展示，已降级为表格',
+      limitations: ['字段类型不适合图表展示'],
+    }]
+  }
 
   const charts: AiChartSpec[] = []
 

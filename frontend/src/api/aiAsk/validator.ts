@@ -16,6 +16,11 @@ const VALID_CHART_TYPES = ['bar', 'line', 'pie', 'table', 'metric-card', 'combo'
 const VALID_CONFIDENCE = ['high', 'medium', 'low']
 const VALID_GAP_REASONS = ['not_found', 'ambiguous', 'incomplete']
 const VALID_NARRATIVE_LEVELS = ['sql_pending', 'executed']
+// Phase 5N Task 6.5D: 与后端 sql_result_serializer._VALID_COLUMNTYPES 保持一致
+const VALID_COLUMN_TYPES = [
+  'unknown', 'null', 'bool', 'int', 'float', 'decimal',
+  'date', 'datetime', 'bytes', 'string', 'mixed',
+]
 const VALID_FOLLOW_UP_TYPES = [
   'why_down',
   'drill_down',
@@ -174,7 +179,16 @@ export function validateAiAskResponse(response: unknown): ValidationResult {
       errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为数组', severity: 'error' })
     } else if (narrative.evidence.length === 0) {
       // sql_pending：SQL 尚未执行，后端必须清空 keyFindings/evidence，空数组合法。
-      if (!isSqlPending) {
+      // executed：空结果或纯维度/无数值指标的结果允许 keyFindings/evidence 为空。
+      //           但只要 keyFindings 非空，evidence 就必须非空，避免编造结论却无证据。
+      if (isSqlPending) {
+        // 允许空数组
+      } else if (response.narrativeLevel === 'executed') {
+        const keyFindings = Array.isArray(narrative.keyFindings) ? narrative.keyFindings : []
+        if (keyFindings.length > 0) {
+          errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为非空数组（executed 且 keyFindings 非空时）', severity: 'error' })
+        }
+      } else {
         errors.push({ path: 'narrative.evidence', message: 'narrative.evidence 必须为非空数组', severity: 'error' })
       }
     } else {
@@ -291,6 +305,70 @@ export function validateAiAskResponse(response: unknown): ValidationResult {
       errors.push({ path: 'sqlValidation', message: 'sqlValidation 必须为对象', severity: 'error' })
     }
   }
+
+  // queryResult — Phase 5N: validation depends on narrativeLevel
+  const nLevel = response.narrativeLevel as string | undefined
+  if (nLevel === 'executed') {
+    // executed requires a valid queryResult
+    if (response.queryResult === undefined || response.queryResult === null) {
+      errors.push({ path: 'queryResult', message: 'narrativeLevel=executed 时必须包含 queryResult', severity: 'error' })
+    } else {
+      const qr = response.queryResult
+      if (!isObject(qr)) {
+        errors.push({ path: 'queryResult', message: 'queryResult 必须为对象', severity: 'error' })
+      } else {
+        if (!isStringArray(qr.columns)) {
+          errors.push({ path: 'queryResult.columns', message: 'queryResult.columns 必须为 string[]', severity: 'error' })
+        }
+        if (!Array.isArray(qr.rows)) {
+          errors.push({ path: 'queryResult.rows', message: 'queryResult.rows 必须为数组', severity: 'error' })
+        } else if (!qr.rows.every((r: unknown) => Array.isArray(r))) {
+          errors.push({ path: 'queryResult.rows', message: 'queryResult.rows 必须为二维数组', severity: 'error' })
+        }
+        // Phase 5N follow-up: validate each row's length matches columns length
+        if (
+          isStringArray(qr.columns) &&
+          Array.isArray(qr.rows) &&
+          qr.rows.every((r: unknown) => Array.isArray(r))
+        ) {
+          for (let i = 0; i < qr.rows.length; i++) {
+            const row = qr.rows[i] as unknown[]
+            if (row.length !== qr.columns.length) {
+              errors.push({ path: `queryResult.rows[${i}]`, message: `行 ${i} 列数与 columns 不匹配`, severity: 'error' })
+            }
+          }
+        }
+        if (typeof qr.rowCount !== 'number' || !Number.isFinite(qr.rowCount) || qr.rowCount < 0) {
+          errors.push({ path: 'queryResult.rowCount', message: 'rowCount 必须为有限非负数', severity: 'error' })
+        }
+        if (typeof qr.truncated !== 'boolean') {
+          errors.push({ path: 'queryResult.truncated', message: 'truncated 必须为 boolean', severity: 'error' })
+        }
+        if (typeof qr.elapsedMs !== 'number' || !Number.isFinite(qr.elapsedMs) || qr.elapsedMs < 0) {
+          errors.push({ path: 'queryResult.elapsedMs', message: 'elapsedMs 必须为有限非负数', severity: 'error' })
+        }
+        if (qr.historyId !== null && (typeof qr.historyId !== 'number' || !Number.isFinite(qr.historyId))) {
+          errors.push({ path: 'queryResult.historyId', message: 'historyId 必须为 number 或 null', severity: 'error' })
+        }
+        // Phase 5N Task 6.5D: columnTypes 可选；存在时必须为合法白名单值且与 columns 等长
+        if (qr.columnTypes !== undefined) {
+          if (!isStringArray(qr.columnTypes)) {
+            errors.push({ path: 'queryResult.columnTypes', message: 'queryResult.columnTypes 必须为 string[]', severity: 'error' })
+          } else {
+            if (isStringArray(qr.columns) && qr.columnTypes.length !== qr.columns.length) {
+              errors.push({ path: 'queryResult.columnTypes', message: 'columnTypes 长度必须与 columns 一致', severity: 'error' })
+            }
+            for (let i = 0; i < qr.columnTypes.length; i++) {
+              if (!VALID_COLUMN_TYPES.includes(qr.columnTypes[i])) {
+                errors.push({ path: 'queryResult.columnTypes', message: `columnTypes[${i}] "${qr.columnTypes[i]}" 不合法`, severity: 'error' })
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  // sql_pending or missing narrativeLevel: queryResult absent/null is OK (no validation needed)
 
   return {
     valid: errors.length === 0,
