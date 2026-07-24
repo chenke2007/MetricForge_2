@@ -72,4 +72,62 @@ describe('recommendCharts', () => {
     })
     expect(result.length).toBeGreaterThanOrEqual(1)
   })
+
+  // ── Phase 5N Task 6.5D: columnTypes-aware recommendation ──
+
+  it('treats decimal columnType as numeric even when values are strings', () => {
+    // 后端将 Decimal 序列化为精确字符串，运行时推断会漏掉它
+    const result = recommendCharts({
+      columns: ['region', 'amount'],
+      sampleRows: [['华东', '123.45'], ['华南', '678.90']],
+      columnTypes: ['string', 'decimal'],
+      question: '各区域金额',
+      intent: { metrics: ['amount'], dimensions: ['region'], filters: [] },
+    })
+    expect(result.some(c => c.chartType === 'bar' && c.yFields.includes('amount'))).toBe(true)
+  })
+
+  it('degrades to table when all value columns are mixed/unknown', () => {
+    const result = recommendCharts({
+      columns: ['region', 'amount'],
+      sampleRows: [['华东', 'N/A']],
+      columnTypes: ['string', 'mixed'],
+      question: '各区域金额',
+      intent: { metrics: ['amount'], dimensions: ['region'], filters: [] },
+    })
+    expect(result.length).toBeGreaterThanOrEqual(1)
+    expect(result.every(c => c.chartType === 'table')).toBe(true)
+  })
+
+  it('degrades to table when value column type is unknown', () => {
+    const result = recommendCharts({
+      columns: ['region', 'amount'],
+      sampleRows: [['华东', null]],
+      columnTypes: ['string', 'unknown'],
+      question: '各区域金额',
+      intent: { metrics: ['amount'], dimensions: ['region'], filters: [] },
+    })
+    expect(result.every(c => c.chartType === 'table')).toBe(true)
+  })
+
+  it('falls back to runtime inference when columnTypes is absent', () => {
+    const result = recommendCharts({
+      columns: ['region', 'revenue'],
+      sampleRows: [['华东', 100000]],
+      question: '各区域销售额',
+      intent: { metrics: ['revenue'], dimensions: ['region'], filters: [] },
+    })
+    expect(result.some(c => c.chartType === 'bar' && c.yFields.includes('revenue'))).toBe(true)
+  })
+
+  it('falls back to runtime inference when columnTypes length mismatches', () => {
+    const result = recommendCharts({
+      columns: ['region', 'revenue'],
+      sampleRows: [['华东', 100000]],
+      columnTypes: ['string'],
+      question: '各区域销售额',
+      intent: { metrics: ['revenue'], dimensions: ['region'], filters: [] },
+    })
+    expect(result.some(c => c.chartType === 'bar' && c.yFields.includes('revenue'))).toBe(true)
+  })
 })

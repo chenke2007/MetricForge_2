@@ -146,6 +146,17 @@ export interface AiInsightNarrative {
   evidenceSummary?: string
 }
 
+export interface QueryResult {
+  columns: string[]
+  rows: unknown[][]
+  rowCount: number
+  truncated: boolean
+  elapsedMs: number
+  historyId: number | null
+  // Phase 5N Task 6.5D: 后端列类型标签（decimal 值为精确字符串，前端据此做图表保护）
+  columnTypes?: string[]
+}
+
 export interface AiAskResponse {
   question: string
   intent: {
@@ -177,4 +188,6 @@ export interface AiAskResponse {
   // Phase 5M additions:
   narrativeLevel?: NarrativeLevel
   sqlValidation?: SqlValidationDetail
+  // Phase 5N additions:
+  queryResult?: QueryResult | null
 }

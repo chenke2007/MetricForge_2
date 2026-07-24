@@ -3,6 +3,7 @@ import type { AiAskAdapter, AiAskContext, ChartDataResult } from './adapter'
 import type { AiAskResponse, AiChartSpec } from '../../types/aiAsk'
 import { AiAskError } from './errors'
 import { validateAiAskResponse } from './validator'
+import { matchChartFields } from './chartFieldMatch'
 
 export class RealLlmAdapter implements AiAskAdapter {
   readonly name = 'RealLlmAdapter'
@@ -20,6 +21,8 @@ export class RealLlmAdapter implements AiAskAdapter {
       datasourceName: context.datasourceName,
       selectedTables: context.selectedTables,
       messageHistory: context.messageHistory ?? [],
+      sessionId: context.sessionId,
+      assistantMessageId: context.assistantMessageId,
     }
 
     let resp: Response
@@ -106,12 +109,37 @@ export class RealLlmAdapter implements AiAskAdapter {
     return data as AiAskResponse
   }
 
-  getChartData(_spec: AiChartSpec, _response: AiAskResponse): ChartDataResult {
+  getChartData(spec: AiChartSpec, response: AiAskResponse): ChartDataResult {
+    // Phase 5N: use real queryResult data when available
+    if (response.narrativeLevel !== 'executed' || !response.queryResult) {
+      return {
+        columns: [],
+        rows: [],
+        isEmpty: true,
+        error: response.narrativeLevel === 'sql_pending'
+          ? 'SQL 待验证（sql_pending），无法提供图表数据'
+          : '当前无查询结果',
+      }
+    }
+
+    const { columns, rows } = response.queryResult
+
+    // Check that spec fields match queryResult columns (case-insensitive)
+    // Phase 5N follow-up: reuse shared matchChartFields function
+    const fieldMatch = matchChartFields(spec, columns)
+    if (!fieldMatch.match) {
+      return {
+        columns: [],
+        rows: [],
+        isEmpty: true,
+        error: '图表字段与查询结果不匹配',
+      }
+    }
+
     return {
-      columns: [],
-      rows: [],
-      isEmpty: true,
-      error: '真实 LLM MVP 暂不返回图表数据，请在 SQL Workbench 验证 SQL 后查看结果',
+      columns,
+      rows,
+      isEmpty: rows.length === 0,
     }
   }
 

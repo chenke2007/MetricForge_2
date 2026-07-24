@@ -5,6 +5,8 @@ export interface AiAskContext {
   datasourceId: number | null
   datasourceName: string | null
   selectedTables: string[]
+  sessionId?: number
+  assistantMessageId?: number
   messageHistory?: Array<{
     role: 'user' | 'assistant'
     content: string

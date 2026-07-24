@@ -44,6 +44,12 @@ class DataSourceAdapter(ABC):
         """关闭连接"""
         ...
 
+    def cancel(self):
+        """取消正在执行的查询（可选实现）。
+
+        默认空操作以保持向后兼容；具体适配器可覆盖以调用驱动层取消。
+        """
+
     @abstractmethod
     def get_dialect(self) -> str:
         """返回 SQL 方言标识: oracle / hive / spark / doris / clickhouse"""

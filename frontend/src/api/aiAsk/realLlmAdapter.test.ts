@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { RealLlmAdapter } from './realLlmAdapter'
 import { AiAskError } from './errors'
+import { useAiAskService } from './index'
 
 const mockFetch = vi.fn()
 
@@ -37,6 +38,20 @@ const validBody = {
     semanticGaps: [],
   },
 }
+
+describe('useAiAskService (Task 5: production always real LLM)', () => {
+  it('returns RealLlmAdapter with no arguments', () => {
+    const service = useAiAskService()
+    expect(service.name).toBe('RealLlmAdapter')
+  })
+
+  it('has no options parameter and never falls back to MockAdapter', () => {
+    // Legacy callers may still pass an options object at runtime; it must be ignored.
+    const service = (useAiAskService as any)({ useRealLlm: false })
+    expect(service.name).toBe('RealLlmAdapter')
+    expect(useAiAskService.length).toBe(0)
+  })
+})
 
 describe('RealLlmAdapter', () => {
   it('calls /api/ai-ask/analyze and returns valid response', async () => {
@@ -78,11 +93,121 @@ describe('RealLlmAdapter', () => {
     ).rejects.toThrow(AiAskError)
   })
 
-  it('returns isEmpty chart data with explanatory error', () => {
+  // ── Phase 5N: getChartData with real queryResult ────────────────────
+
+  it('returns isEmpty for sql_pending response', () => {
     const adapter = RealLlmAdapter.create()
-    const result = adapter.getChartData({} as any, {} as any)
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'x', yFields: ['y'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'sql_pending',
+      },
+    )
     expect(result.isEmpty).toBe(true)
-    expect(result.error).toContain('真实 LLM MVP 暂不返回图表数据')
+    expect(result.error).toContain('sql_pending')
+  })
+
+  it('returns isEmpty when queryResult is missing', () => {
+    const adapter = RealLlmAdapter.create()
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'x', yFields: ['y'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'executed',
+        queryResult: null,
+      },
+    )
+    expect(result.isEmpty).toBe(true)
+  })
+
+  it('returns data when fields match queryResult columns', () => {
+    const adapter = RealLlmAdapter.create()
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'region', yFields: ['revenue'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'executed',
+        queryResult: { columns: ['region', 'revenue'], rows: [['华东', 100], ['华南', 200]], rowCount: 2, truncated: false, elapsedMs: 50, historyId: null },
+      },
+    )
+    expect(result.isEmpty).toBe(false)
+    expect(result.error).toBeUndefined()
+    expect(result.columns).toEqual(['region', 'revenue'])
+    expect(result.rows).toEqual([['华东', 100], ['华南', 200]])
+    expect(result.columns).not.toContain('nonExistent')
+  })
+
+  it('matches fields case-insensitively', () => {
+    const adapter = RealLlmAdapter.create()
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'Region', yFields: ['TOTAL_REVENUE'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'executed',
+        queryResult: { columns: ['region', 'total_revenue'], rows: [['华东', 100]], rowCount: 1, truncated: false, elapsedMs: 50, historyId: null },
+      },
+    )
+    expect(result.isEmpty).toBe(false)
+    expect(result.error).toBeUndefined()
+  })
+
+  it('returns error when spec fields do not match queryResult columns', () => {
+    const adapter = RealLlmAdapter.create()
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'nonexistent', yFields: ['revenue'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'executed',
+        queryResult: { columns: ['region', 'revenue'], rows: [['华东', 100]], rowCount: 1, truncated: false, elapsedMs: 50, historyId: null },
+      },
+    )
+    expect(result.isEmpty).toBe(true)
+    expect(result.error).toContain('不匹配')
+  })
+
+  it('returns only actual queryResult data, not fabricated data', () => {
+    const adapter = RealLlmAdapter.create()
+    const result = adapter.getChartData(
+      { title: 't', chartType: 'bar', xField: 'a', yFields: ['b'], rationale: '', limitations: [] },
+      {
+        question: 'q',
+        intent: { metrics: [], dimensions: [], filters: [] },
+        sqlPlan: { datasourceId: 1, datasourceName: '', sql: '', tables: [], fields: [], assumptions: [], safetyWarnings: [] },
+        chartSuggestions: [],
+        narrative: { summary: '', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+        semanticGaps: [],
+        narrativeLevel: 'executed',
+        queryResult: { columns: ['a', 'b'], rows: [['x', 1], ['y', 2], ['z', 3]], rowCount: 3, truncated: false, elapsedMs: 50, historyId: null },
+      },
+    )
+    expect(result.rows).toEqual([['x', 1], ['y', 2], ['z', 3]])
+    expect(result.rows).not.toEqual([['华东', 100]])
   })
 
   it('throws LLM_CONNECTION_ERROR on network failure', async () => {
@@ -350,5 +475,26 @@ describe('RealLlmAdapter', () => {
 
     expect(result.narrativeLevel).toBe('sql_pending')
     expect(result.narrative.evidence).toEqual([])
+  })
+
+  it('sends sessionId and assistantMessageId in request body', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => validBody,
+    })
+
+    const adapter = RealLlmAdapter.create()
+    await adapter.analyze('q', {
+      datasourceId: 1,
+      datasourceName: '示例数据源',
+      selectedTables: ['t'],
+      sessionId: 42,
+      assistantMessageId: 101,
+    })
+
+    const [, init] = mockFetch.mock.calls[0]
+    const body = JSON.parse((init as RequestInit).body as string)
+    expect(body.sessionId).toBe(42)
+    expect(body.assistantMessageId).toBe(101)
   })
 })

@@ -7,7 +7,7 @@ ensuring data inserted in tests is visible via API calls.
 import pytest
 from fastapi.testclient import TestClient
 from app.models import DatasourceConfig, TableMetadata, ColumnMetadata
-from unittest.mock import patch, MagicMock
+from tests.support.sql_worker_factories import success_factory
 
 
 @pytest.fixture
@@ -16,7 +16,16 @@ def client(tmp_path):
     db_path = tmp_path / "test_api.db"
     from app.main import create_app
     app = create_app(database_url=f"sqlite:///{db_path}")
-    return TestClient(app)
+    # Patch the module-level execution_service to use test factory
+    from app.api.sql_workbench import execution_service as _svc
+    # save defaults for teardown
+    _saved = (_svc._adapter_factory, _svc._cleanup_callback, _svc._temp_root)
+    _svc._adapter_factory = success_factory
+    _svc._cleanup_callback = None
+    _svc._temp_root = str(tmp_path)
+    yield TestClient(app)
+    # teardown — restore defaults to avoid singleton pollution
+    _svc._adapter_factory, _svc._cleanup_callback, _svc._temp_root = _saved
 
 
 @pytest.fixture
@@ -37,29 +46,23 @@ class TestSqlApi:
         # Create a datasource
         ds = DatasourceConfig(
             name="api-test", ds_type="oracle", host="127.0.0.1",
-            port=1521, username="ro", dialect="oracle",
+            port=1521, username="ro", password_enc="secret",
+            dialect="oracle", is_active=True,
         )
         db_session.add(ds)
         db_session.commit()
         ds_id = ds.id
 
-        with patch('app.services.sql_execution_service.get_adapter_for_datasource') as mock_get:
-            mock_adapter = MagicMock()
-            mock_adapter.execute_query.return_value = MagicMock(
-                columns=["ID", "NAME"], rows=[[1, "A"]], row_count=1, error=None
-            )
-            mock_adapter.name = "api-test"
-            mock_get.return_value = mock_adapter
-
-            resp = client.post("/api/sql/execute", json={
-                "datasource_id": ds_id,
-                "sql": "SELECT * FROM DUAL",
-            })
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["columns"] == ["ID", "NAME"]
-            assert data["row_count"] == 1
-            assert data["history_id"] is not None
+        resp = client.post("/api/sql/execute", json={
+            "datasource_id": ds_id,
+            "sql": "SELECT * FROM DUAL",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["columns"] == ["ID", "NAME"]
+        assert data["row_count"] == 1
+        assert data["history_id"] is not None
+        assert "column_types" in data
 
     def test_execute_validation_failure(self, client):
         resp = client.post("/api/sql/execute", json={
@@ -166,22 +169,16 @@ class TestSqlApi:
     def test_history_list(self, client, db_session):
         ds = DatasourceConfig(
             name="hist-test", ds_type="oracle", host="127.0.0.1",
-            port=1521, username="ro", dialect="oracle", is_active=True,
+            port=1521, username="ro", password_enc="secret",
+            dialect="oracle", is_active=True,
         )
         db_session.add(ds)
         db_session.commit()
 
-        # Execute a query to generate history
-        with patch('app.services.sql_execution_service.get_adapter_for_datasource') as mock_get:
-            mock_adapter = MagicMock()
-            mock_adapter.execute_query.return_value = MagicMock(columns=["X"], rows=[[1]], row_count=1, error=None)
-            mock_adapter.name = "hist-test"
-            mock_get.return_value = mock_adapter
-
-            client.post("/api/sql/execute", json={
-                "datasource_id": ds.id,
-                "sql": "SELECT 1 FROM DUAL",
-            })
+        client.post("/api/sql/execute", json={
+            "datasource_id": ds.id,
+            "sql": "SELECT 1 FROM DUAL",
+        })
 
         resp = client.get("/api/sql/history")
         assert resp.status_code == 200

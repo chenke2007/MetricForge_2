@@ -153,6 +153,35 @@ class TestList:
         assert result[0]["id"] == draft2["id"]
         assert result[1]["id"] == draft1["id"]
 
+    def test_list_tie_updated_at_orders_by_id_desc(self, chart_draft_service, db_session):
+        """updated_at 相同时，按 id DESC 稳定排序，较新的草稿优先。
+
+        不使用 sleep 制造时间差；显式将两个草稿 updated_at 设为同一固定值，
+        断言列表按 id 降序返回（较新的 id 在前）。
+        """
+        from datetime import datetime, timezone
+
+        draft1 = chart_draft_service.create(
+            {"title": "First", "sql_text": "SELECT 1", "datasource_id": None, "chart_config": {"chartType": "bar"}},
+            db_session,
+        )
+        draft2 = chart_draft_service.create(
+            {"title": "Second", "sql_text": "SELECT 2", "datasource_id": None, "chart_config": {"chartType": "line"}},
+            db_session,
+        )
+
+        fixed = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        db_session.query(ChartDraft).filter(
+            ChartDraft.id.in_([draft1["id"], draft2["id"]]),
+        ).update({ChartDraft.updated_at: fixed}, synchronize_session=False)
+        db_session.commit()
+
+        result = chart_draft_service.list(db_session)
+        assert len(result) == 2
+        assert result[0]["id"] > result[1]["id"], (
+            "updated_at 相同时，较新的 id 应排在前面"
+        )
+
     def test_list_empty(self, chart_draft_service, db_session):
         result = chart_draft_service.list(db_session)
         assert result == []

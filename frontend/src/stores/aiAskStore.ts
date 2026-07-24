@@ -22,11 +22,8 @@ interface AiAskStore {
   responseValidation: ValidationResult | null
   error: AiAskError | null
 
-  // Phase 5L: Real LLM toggle
-  useRealLlm: boolean
-
-  // 历史轮次产物 (key: assistant message id)
-  responseHistory: Record<number, AiAskResponse>
+  // Phase 5N: Exact assistant message binding
+  currentAssistantMessageId: number | null
 
   // Actions
   setDatasource: (id: number | null, name: string | null) => void
@@ -40,13 +37,11 @@ interface AiAskStore {
   setResponseValidation: (v: ValidationResult | null) => void
   setError: (error: AiAskError | null) => void
   clearError: () => void
-  setUseRealLlm: (v: boolean) => void
-  saveResponseForMessage: (messageId: number, resp: AiAskResponse) => void
-  getResponseForMessage: (messageId: number) => AiAskResponse | undefined
+  setCurrentAssistantMessageId: (id: number | null) => void
   reset: () => void
 }
 
-export const useAiAskStore = create<AiAskStore>((set, get) => ({
+export const useAiAskStore = create<AiAskStore>((set) => ({
   datasourceId: null,
   datasourceName: null,
   selectedTables: [],
@@ -56,13 +51,11 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
   activeChartIndex: 0,
   analysisStep: 0,
 
-  adapterName: 'MockAdapter',
+  adapterName: 'RealLlmAdapter',
   responseValidation: null,
   error: null,
 
-  useRealLlm: false,
-
-  responseHistory: {},
+  currentAssistantMessageId: null,
 
   setDatasource: (id, name) => set({ datasourceId: id, datasourceName: name }),
   setSelectedTables: (tables) => set({ selectedTables: tables }),
@@ -75,12 +68,7 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
   setResponseValidation: (v) => set({ responseValidation: v }),
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
-  setUseRealLlm: (v) => set({ useRealLlm: v }),
-  saveResponseForMessage: (messageId, resp) =>
-    set((state) => ({
-      responseHistory: { ...state.responseHistory, [messageId]: resp },
-    })),
-  getResponseForMessage: (messageId) => get().responseHistory[messageId],
+  setCurrentAssistantMessageId: (id) => set({ currentAssistantMessageId: id }),
   reset: () =>
     set({
       datasourceId: null,
@@ -91,9 +79,9 @@ export const useAiAskStore = create<AiAskStore>((set, get) => ({
       isExecuting: false,
       activeChartIndex: 0,
       analysisStep: 0,
-      adapterName: 'MockAdapter',
+      adapterName: 'RealLlmAdapter',
       responseValidation: null,
       error: null,
-      useRealLlm: false,
+      currentAssistantMessageId: null,
     }),
 }))

@@ -133,4 +133,30 @@ describe('AskInput', () => {
     fireEvent.change(textarea, { target: { value: '各区域销售额' } })
     expect(screen.queryByText(/不能仅包含标点或符号/)).not.toBeInTheDocument()
   })
+
+  it('disables both textarea and send button when disabled', () => {
+    render(<AskInput onSend={() => {}} disabled />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    const button = screen.getByText('问数').closest('button')
+    expect(textarea).toBeDisabled()
+    expect(button).toBeDisabled()
+  })
+
+  it('does not trigger onSend on click when disabled', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} disabled />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '近 7 天销量' } })
+    fireEvent.click(screen.getByText('问数'))
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('does not trigger onSend on Enter when disabled', () => {
+    const onSend = vi.fn()
+    render(<AskInput onSend={onSend} disabled />)
+    const textarea = screen.getByPlaceholderText(/用自然语言描述/)
+    fireEvent.change(textarea, { target: { value: '近 7 天销量' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

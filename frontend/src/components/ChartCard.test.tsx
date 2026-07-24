@@ -212,4 +212,158 @@ describe('ChartCard', () => {
     )
     expect(screen.queryByText(/局限性/)).not.toBeInTheDocument()
   })
+
+  // ── Phase 5N Task 6.5D: columnTypes / unsafe Decimal protection ──
+
+  it('shows explanation instead of chart for unsafe decimal yField', () => {
+    // 高精度 Decimal（超过 JS Number 安全精度）不得直接绘图
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '12345678901234567890.1234']]}
+        columnTypes={['string', 'decimal']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/精度/)).toBeInTheDocument()
+  })
+
+  it('renders chart for safe decimal string values', () => {
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '123.45'], ['华南', '678.90']]}
+        columnTypes={['string', 'decimal']}
+      />
+    )
+    expect(screen.getByTestId('mock-chart-canvas')).toBeInTheDocument()
+    expect(screen.queryByText(/精度/)).not.toBeInTheDocument()
+  })
+
+  it('shows explanation instead of chart for mixed-type yField', () => {
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', 'N/A']]}
+        columnTypes={['string', 'mixed']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/不适合图表展示/)).toBeInTheDocument()
+  })
+
+  it('renders chart normally when columnTypes is absent', () => {
+    render(
+      <ChartCard spec={barSpec} columns={mockData.columns} rows={mockData.rows} />
+    )
+    expect(screen.getByTestId('mock-chart-canvas')).toBeInTheDocument()
+  })
+
+  // ── Phase 5N Task 6.5D follow-up: yField type allowlist ──────────────
+  // bar/line/pie/combo 仅允许 int/float/decimal；其余类型全部降级说明
+  // table 不应用数值 yField 限制
+
+  it('shows degradation for string-type yField (even with numeric-looking values)', () => {
+    // string 类型的数字形态值 "12345" 不得作为数值图表绘制
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '12345'], ['华南', '67890']]}
+        columnTypes={['string', 'string']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/不适合图表展示/)).toBeInTheDocument()
+  })
+
+  it('shows degradation for date-type yField', () => {
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '2026-01-01']]}
+        columnTypes={['string', 'date']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/不适合图表展示/)).toBeInTheDocument()
+  })
+
+  it('shows degradation for datetime-type yField', () => {
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '2026-01-01 12:00:00']]}
+        columnTypes={['string', 'datetime']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/不适合图表展示/)).toBeInTheDocument()
+  })
+
+  it('shows degradation for bool-type yField', () => {
+    render(
+      <ChartCard
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', true]]}
+        columnTypes={['string', 'bool']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/不适合图表展示/)).toBeInTheDocument()
+  })
+
+  it('does NOT apply yField type restriction for table chartType', () => {
+    const tableSpec: AiChartSpec = {
+      title: '数据明细',
+      chartType: 'table',
+      yFields: ['region', 'total_revenue'],
+      rationale: '',
+      limitations: [],
+    }
+    render(
+      <ChartCard
+        spec={tableSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '12345']]}
+        columnTypes={['string', 'string']}
+      />
+    )
+    // table 不应用数值 yField 限制，不应显示字段类型问题
+    expect(screen.queryByTestId('chart-field-issue')).not.toBeInTheDocument()
+  })
+
+  // ── 回归测试: columns=["REGION","TOTAL_AMOUNT"] with canonical fields ──
+
+  it('renders chart for safe decimal with canonical uppercase fields', () => {
+    render(
+      <ChartCard
+        spec={{ ...barSpec, xField: 'REGION', yFields: ['TOTAL_AMOUNT'] }}
+        columns={['REGION', 'TOTAL_AMOUNT']}
+        rows={[['华东', '123.45'], ['华南', '678.90']]}
+        columnTypes={['string', 'decimal']}
+      />
+    )
+    expect(screen.getByTestId('mock-chart-canvas')).toBeInTheDocument()
+    expect(screen.queryByText(/精度/)).not.toBeInTheDocument()
+  })
+
+  it('shows precision warning for unsafe decimal with canonical uppercase fields', () => {
+    render(
+      <ChartCard
+        spec={{ ...barSpec, xField: 'REGION', yFields: ['TOTAL_AMOUNT'] }}
+        columns={['REGION', 'TOTAL_AMOUNT']}
+        rows={[['华东', '12345678901234567890.1234']]}
+        columnTypes={['string', 'decimal']}
+      />
+    )
+    expect(screen.queryByTestId('mock-chart-canvas')).not.toBeInTheDocument()
+    expect(screen.getByText(/精度/)).toBeInTheDocument()
+  })
 })

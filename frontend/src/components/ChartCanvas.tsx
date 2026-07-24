@@ -13,6 +13,7 @@ import type { AiChartSpec } from '../types/aiAsk'
 import { getTheme, getSeriesColor } from '../styles/chartThemes'
 import { aggregateChartData, aggregateMultiYField } from '../utils/chartData'
 import { formatMetricValue } from '../utils/numberFormat'
+import { hasUnsafeDecimalValues } from '../api/aiAsk/recommendation'
 
 echartsCore.use([
   BarChart, LineChart, PieChart,
@@ -26,6 +27,8 @@ interface ChartCanvasProps {
   rows: any[][]
   width?: number
   height?: number
+  /** Phase 5N Task 6.5D: 后端列类型标签，用于 unsafe Decimal 降级保护 */
+  columnTypes?: string[]
 }
 
 const ChartCanvas: React.FC<ChartCanvasProps> = ({
@@ -34,6 +37,7 @@ const ChartCanvas: React.FC<ChartCanvasProps> = ({
   rows,
   width,
   height = 300,
+  columnTypes,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<EChartsType | null>(null)
@@ -57,6 +61,28 @@ const ChartCanvas: React.FC<ChartCanvasProps> = ({
     if (spec.chartType === 'metric-card' || spec.chartType === 'table') {
       chart.clear()
       return
+    }
+
+    // --- Phase 5N Task 6.5D: unsafe Decimal 降级保护 ---
+    // decimal 列值为精确字符串；超出 JS Number 安全精度时不得静默丢精度绘图，
+    // 降级为精度提示（由上层表格展示原始值）
+    if (columnTypes && columnTypes.length === columns.length) {
+      const unsafeField = spec.yFields.find((field) => {
+        const idx = columns.indexOf(field)
+        return idx !== -1 && columnTypes[idx] === 'decimal' && hasUnsafeDecimalValues(rows, idx)
+      })
+      if (unsafeField) {
+        chart.clear()
+        chart.setOption({
+          title: {
+            text: `字段 ${unsafeField} 数值精度超出图表安全范围，请查看查询结果表`,
+            left: 'center',
+            top: 'center',
+            textStyle: { color: '#999', fontSize: 12 },
+          },
+        })
+        return
+      }
     }
 
     // --- PIE ---
@@ -390,7 +416,7 @@ const ChartCanvas: React.FC<ChartCanvasProps> = ({
         textStyle: { color: '#999' },
       },
     })
-  }, [spec, columns, rows, width, height, theme])
+  }, [spec, columns, rows, width, height, theme, columnTypes])
 
   return (
     <div

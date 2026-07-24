@@ -61,6 +61,7 @@ METADATA_COLUMNS = {
         ("error_message", "TEXT"),
         ("tokens_prompt", "INTEGER"),
         ("tokens_completion", "INTEGER"),
+        ("response_json", "TEXT"),
     ],
 }
 

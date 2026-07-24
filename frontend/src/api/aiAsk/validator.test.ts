@@ -478,6 +478,14 @@ describe('validateAiAskResponse', () => {
     const result = validateAiAskResponse({
       ...validResponse,
       narrativeLevel: 'executed',
+      queryResult: {
+        columns: ['region', 'sales'],
+        rows: [['华东', 100]],
+        rowCount: 1,
+        truncated: false,
+        elapsedMs: 150,
+        historyId: 42,
+      },
     })
     expect(result.valid).toBe(true)
   })
@@ -573,13 +581,13 @@ describe('validateAiAskResponse', () => {
     expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
   })
 
-  it('rejects executed + empty evidence (executed contract preserved)', () => {
+  it('rejects executed + empty evidence + missing queryResult', () => {
     const result = validateAiAskResponse({
       ...sqlPendingEmptyEvidence,
       narrativeLevel: 'executed',
     })
     expect(result.valid).toBe(false)
-    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+    expect(result.errors.some((e) => e.path === 'queryResult')).toBe(true)
   })
 
   it('rejects legacy response (no narrativeLevel) + empty evidence (Phase 5K contract preserved)', () => {
@@ -588,4 +596,454 @@ describe('validateAiAskResponse', () => {
     expect(result.valid).toBe(false)
     expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
   })
+
+  // ── Phase 5N: queryResult validation ─────────────────────────────────
+
+  const makeExecutedWithQueryResult = (overrides: Record<string, unknown> = {}) => ({
+    ...validResponse,
+    narrativeLevel: 'executed' as const,
+    queryResult: {
+      columns: ['region', 'sales'],
+      rows: [['华东', 100], ['华北', 200]],
+      rowCount: 2,
+      truncated: false,
+      elapsedMs: 150,
+      historyId: 42,
+      ...overrides,
+    },
+  })
+
+  const makeSqlPending = (queryResultOverride?: unknown) => ({
+    ...validResponse,
+    narrativeLevel: 'sql_pending' as const,
+    ...(queryResultOverride !== undefined ? { queryResult: queryResultOverride } : {}),
+  })
+
+  it('accepts sql_pending with no queryResult field', () => {
+    const result = validateAiAskResponse(makeSqlPending())
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'queryResult')).toBe(false)
+  })
+
+  it('accepts sql_pending with queryResult null', () => {
+    const result = validateAiAskResponse(makeSqlPending(null))
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'queryResult')).toBe(false)
+  })
+
+  it('accepts executed with valid queryResult', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult())
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path.startsWith('queryResult'))).toBe(false)
+  })
+
+  it('rejects executed without queryResult', () => {
+    const { queryResult: _, ...rest } = makeExecutedWithQueryResult()
+    const result = validateAiAskResponse(rest)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult')).toBe(true)
+  })
+
+  it('rejects executed with queryResult null', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'executed' as const,
+      queryResult: null as any,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult')).toBe(true)
+  })
+
+  it('rejects executed with non-object queryResult', () => {
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'executed' as const,
+      queryResult: 'string',
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult' && e.message.includes('对象'))).toBe(true)
+  })
+
+  it('rejects executed when columns is not string[]', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ columns: [1, 2, 3] as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.columns')).toBe(true)
+  })
+
+  it('rejects executed when columns is a string (not array)', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ columns: 'region' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.columns')).toBe(true)
+  })
+
+  it('rejects executed when rows is not an array', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rows: 'data' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rows')).toBe(true)
+  })
+
+  it('rejects executed when rows is not a 2D array (row is not array)', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rows: ['not_array'] as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rows')).toBe(true)
+  })
+
+  it('accepts executed with empty rows array', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rows: [], rowCount: 0 }))
+    expect(result.valid).toBe(true)
+  })
+  // -- Phase 5N follow-up: executed empty evidence exception ---
+
+  const makeExecutedEmptyEvidence = (overrides = {}) => ({
+    question: 'test',
+    intent: { metrics: [], dimensions: [], filters: [] },
+    sqlPlan: { datasourceId: 1, datasourceName: 'd', sql: 'SELECT 1', tables: ['t'], fields: ['a'], assumptions: [], safetyWarnings: [] },
+    chartSuggestions: [],
+    narrative: { summary: 's', keyFindings: [], evidence: [], risks: [], nextQuestions: [] },
+    semanticGaps: [],
+    narrativeLevel: 'executed' as const,
+    queryResult: { columns: ['a'], rows: [], rowCount: 0, truncated: false, elapsedMs: 10, historyId: null, ...overrides },
+  })
+
+  it('accepts executed + rows=[] + evidence=[]', () => {
+    const r = validateAiAskResponse(makeExecutedEmptyEvidence())
+    expect(r.valid).toBe(true)
+  })
+
+  it('accepts executed + string-only rows + evidence=[] (dimension-only result)', () => {
+    const r = validateAiAskResponse(makeExecutedEmptyEvidence({ rows: [['x']], rowCount: 1 }))
+    expect(r.valid).toBe(true)
+    expect(r.errors.some((e) => e.path === 'narrative.evidence')).toBe(false)
+  })
+
+  it('still rejects executed + evidence that is not an array', () => {
+    const r = validateAiAskResponse({
+      ...makeExecutedEmptyEvidence({ rows: [['x']], rowCount: 1 }),
+      narrative: { summary: 's', keyFindings: [], evidence: 'bad' as any, risks: [], nextQuestions: [] },
+    })
+    expect(r.valid).toBe(false)
+    expect(r.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects executed + missing queryResult + evidence=[]', () => {
+    const { queryResult: _, ...rest } = makeExecutedEmptyEvidence()
+    const r = validateAiAskResponse(rest)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some((e) => e.path === 'queryResult')).toBe(true)
+  })
+
+
+  it('rejects executed with negative rowCount', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rowCount: -1 }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+  })
+
+  it('rejects executed with NaN rowCount', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rowCount: NaN }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+  })
+
+  it('rejects executed with Infinity rowCount', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rowCount: Infinity }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+  })
+
+  it('rejects executed with string rowCount', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rowCount: '2' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+  })
+
+  it('accepts executed with zero rowCount (empty result)', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ rows: [], rowCount: 0 }))
+    expect(result.valid).toBe(true)
+  })
+
+  it('rejects executed with negative elapsedMs', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ elapsedMs: -1 }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.elapsedMs')).toBe(true)
+  })
+
+  it('rejects executed with NaN elapsedMs', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ elapsedMs: NaN }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.elapsedMs')).toBe(true)
+  })
+
+  it('rejects executed with Infinity elapsedMs', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ elapsedMs: Infinity }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.elapsedMs')).toBe(true)
+  })
+
+  it('rejects executed with string elapsedMs', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ elapsedMs: '150' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.elapsedMs')).toBe(true)
+  })
+
+  it('rejects executed when truncated is not boolean (string)', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ truncated: 'false' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.truncated')).toBe(true)
+  })
+
+  it('rejects executed when truncated is undefined', () => {
+    const { truncated: _, ...qr } = makeExecutedWithQueryResult().queryResult!
+    const result = validateAiAskResponse({
+      ...makeExecutedWithQueryResult(),
+      queryResult: qr,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.truncated')).toBe(true)
+  })
+
+  it('rejects executed when historyId is string', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ historyId: '42' as any }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.historyId')).toBe(true)
+  })
+
+  it('accepts executed when historyId is null', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ historyId: null }))
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts executed when historyId is number', () => {
+    const result = validateAiAskResponse(makeExecutedWithQueryResult({ historyId: 123 }))
+    expect(result.valid).toBe(true)
+  })
+
+  it('rejects snake_case fields in queryResult (e.g. row_count)', () => {
+    const snakeCaseQr = {
+      columns: ['region', 'sales'],
+      rows: [['华东', 100]],
+      row_count: 1,
+      truncated: false,
+      elapsed_ms: 100,
+      history_id: 1,
+    }
+    // snake_case fields won't match camelCase validation — rowCount/elapsedMs/historyId are undefined
+    const result = validateAiAskResponse({
+      ...validResponse,
+      narrativeLevel: 'executed',
+      queryResult: snakeCaseQr as any,
+    })
+    // Must have errors because rowCount, elapsedMs, historyId are missing/undefined
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+    expect(result.errors.some((e) => e.path === 'queryResult.elapsedMs')).toBe(true)
+  })
+
+  it('rejects executed with missing rowCount field', () => {
+    const { rowCount: _, ...qr } = makeExecutedWithQueryResult().queryResult!
+    const result = validateAiAskResponse({
+      ...makeExecutedWithQueryResult(),
+      queryResult: qr,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.rowCount')).toBe(true)
+  })
+
+  it('rejects executed with missing columns field', () => {
+    const { columns: _, ...qr } = makeExecutedWithQueryResult().queryResult!
+    const result = validateAiAskResponse({
+      ...makeExecutedWithQueryResult(),
+      queryResult: qr,
+    })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'queryResult.columns')).toBe(true)
+  })
+
+  // -- Phase 5N follow-up: queryResult row structure validation ---
+
+  describe('queryResult row length validation', () => {
+    it('rejects row with fewer cells than columns', () => {
+      const result = validateAiAskResponse(makeExecutedWithQueryResult({
+        columns: ['region', 'sales'],
+        rows: [['华东']],
+      }))
+      expect(result.valid).toBe(false)
+      expect(result.errors.some((e) => e.path === 'queryResult.rows[0]')).toBe(true)
+    })
+
+    it('rejects row with more cells than columns', () => {
+      const result = validateAiAskResponse(makeExecutedWithQueryResult({
+        columns: ['region'],
+        rows: [['华东', 100]],
+      }))
+      expect(result.valid).toBe(false)
+      expect(result.errors.some((e) => e.path === 'queryResult.rows[0]')).toBe(true)
+    })
+
+    it('points to correct row index when only row[1] has wrong width', () => {
+      const result = validateAiAskResponse(makeExecutedWithQueryResult({
+        columns: ['region', 'sales'],
+        rows: [
+          ['华东', 100],
+          ['华南'],
+        ],
+      }))
+      expect(result.valid).toBe(false)
+      expect(result.errors.some((e) => e.path === 'queryResult.rows[1]')).toBe(true)
+      expect(result.errors.some((e) => e.path === 'queryResult.rows[0]')).toBe(false)
+    })
+
+    it('allows columns=[] rows=[] as structurally valid', () => {
+      const result = validateAiAskResponse(makeExecutedWithQueryResult({
+        columns: [],
+        rows: [],
+        rowCount: 0,
+      }))
+      expect(result.errors.some((e) => e.path && e.path.startsWith('queryResult.rows'))).toBe(false)
+    })
+  })
+
+  // ── Phase 5N follow-up 5: executed evidence 收紧 ───────────────────────
+
+  const makeExecutedEvidenceCheck = (overrides = {}) => ({
+    question: 'test',
+    intent: { metrics: [], dimensions: [], filters: [] },
+    sqlPlan: { datasourceId: 1, datasourceName: 'd', sql: 'SELECT 1', tables: ['t'], fields: ['a'], assumptions: [], safetyWarnings: [] },
+    chartSuggestions: [],
+    narrative: { summary: 's', keyFindings: [] as string[], evidence: [] as any[], risks: [], nextQuestions: [] },
+    semanticGaps: [],
+    narrativeLevel: 'executed' as const,
+    queryResult: { columns: ['a'], rows: [] as any[][], rowCount: 0, truncated: false, elapsedMs: 10, historyId: null, ...overrides },
+    ...overrides,
+  })
+
+  it('accepts executed + dimension-only rows + keyFindings=[] + evidence=[]', () => {
+    const result = validateAiAskResponse(makeExecutedEvidenceCheck({
+      queryResult: { columns: ['region'], rows: [['长三角'], ['京津冀']], rowCount: 2, truncated: false, elapsedMs: 10, historyId: null },
+    }))
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(false)
+  })
+
+  it('accepts executed + empty rows + keyFindings=[] + evidence=[]', () => {
+    const result = validateAiAskResponse(makeExecutedEvidenceCheck())
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(false)
+  })
+
+  it('rejects executed + numeric rows + keyFindings non-empty + evidence=[]', () => {
+    const result = validateAiAskResponse(makeExecutedEvidenceCheck({
+      queryResult: { columns: ['region', 'sales'], rows: [['华东', 100]], rowCount: 1, truncated: false, elapsedMs: 10, historyId: null },
+      narrative: { summary: 's', keyFindings: ['sales 最高'], evidence: [], risks: [], nextQuestions: [] },
+    }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects executed + fabricated finding + evidence=[]', () => {
+    const result = validateAiAskResponse(makeExecutedEvidenceCheck({
+      narrative: { summary: 's', keyFindings: ['任意结论'], evidence: [], risks: [], nextQuestions: [] },
+    }))
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects executed + missing evidence', () => {
+    const base = makeExecutedEvidenceCheck()
+    const { evidence: _, ...narrative } = base.narrative
+    const result = validateAiAskResponse({ ...base, narrative })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('rejects executed + null evidence', () => {
+    const base = makeExecutedEvidenceCheck()
+    const result = validateAiAskResponse({ ...base, narrative: { ...base.narrative, evidence: null } })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(true)
+  })
+
+  it('accepts executed + non-empty evidence', () => {
+    const base = makeExecutedEvidenceCheck({
+      queryResult: { columns: ['region', 'sales'], rows: [['华东', 100]], rowCount: 1, truncated: false, elapsedMs: 10, historyId: null },
+      narrative: {
+        summary: 's',
+        keyFindings: ['华东 sales 最高'],
+        evidence: [{
+          claim: '华东 sales 最高',
+          fields: ['region', 'sales'],
+          sqlSnippet: 'SELECT region, SUM(sales) FROM t GROUP BY region',
+          calculation: 'SUM(sales)',
+          sourceFields: ['region', 'sales'],
+          confidence: 'high',
+        }],
+        risks: [],
+        nextQuestions: [],
+      },
+    })
+    const result = validateAiAskResponse(base)
+    expect(result.valid).toBe(true)
+    expect(result.errors.some((e) => e.path === 'narrative.evidence')).toBe(false)
+  })
 })
+
+  // ── Phase 5N Task 6.5D: columnTypes validation ──
+
+  // 构造 narrativeLevel=executed 且带 queryResult 的合法响应
+  function makeValidExecutedResponse(): AiAskResponse {
+    return {
+      ...validResponse,
+      narrativeLevel: 'executed',
+      queryResult: {
+        columns: ['region', 'sales'],
+        rows: [['华东', 100]],
+        rowCount: 1,
+        truncated: false,
+        elapsedMs: 10,
+        historyId: null,
+      },
+    }
+  }
+
+  it('accepts valid columnTypes matching columns length', () => {
+    const base = makeValidExecutedResponse()
+    base.queryResult!.columnTypes = ['string', 'decimal']
+    const result = validateAiAskResponse(base)
+    expect(result.valid).toBe(true)
+  })
+
+  it('rejects columnTypes with wrong length', () => {
+    const base = makeValidExecutedResponse()
+    base.queryResult!.columnTypes = ['string']
+    const result = validateAiAskResponse(base)
+    expect(result.errors.some(e => e.path === 'queryResult.columnTypes')).toBe(true)
+  })
+
+  it('rejects columnTypes with invalid type values', () => {
+    const base = makeValidExecutedResponse()
+    base.queryResult!.columnTypes = ['string', 'integer']
+    const result = validateAiAskResponse(base)
+    expect(result.errors.some(e => e.path === 'queryResult.columnTypes')).toBe(true)
+  })
+
+  it('accepts all valid columnType values', () => {
+    const base = makeValidExecutedResponse()
+    base.queryResult = {
+      columns: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'],
+      rows: [[]],
+      rowCount: 1,
+      truncated: false,
+      elapsedMs: 10,
+      historyId: null,
+      columnTypes: ['unknown', 'null', 'bool', 'int', 'float', 'decimal', 'date', 'datetime', 'bytes', 'string', 'mixed'],
+    }
+    const result = validateAiAskResponse(base)
+    expect(result.errors.some(e => e.path === 'queryResult.columnTypes')).toBe(false)
+  })
+
+  it('allows missing columnTypes (backward compat)', () => {
+    const base = makeValidExecutedResponse()
+    delete base.queryResult!.columnTypes
+    const result = validateAiAskResponse(base)
+    expect(result.valid).toBe(true)
+  })

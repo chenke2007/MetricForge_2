@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons'
 import ChartCanvas from './ChartCanvas'
 import type { AiChartSpec, MetricIcon } from '../types/aiAsk'
+import { NUMERIC_COLUMN_TYPES, hasUnsafeDecimalValues } from '../api/aiAsk/recommendation'
 
 const { Text, Paragraph } = Typography
 
@@ -24,6 +25,47 @@ interface ChartCardProps {
   width?: number
   isActive?: boolean
   onSelect?: () => void
+  /** Phase 5N Task 6.5D: 后端列类型标签，用于 unsafe Decimal / 不可图表化类型保护 */
+  columnTypes?: string[]
+}
+
+// ── Phase 5N Task 6.5D: 字段类型安全检查 ──────────────────────────────
+
+interface ChartFieldIssue {
+  field: string
+  reason: 'unsafe_decimal' | 'incompatible_type'
+  columnType: string
+}
+
+/** 仅 bar/line/pie/combo 需要数值 yField 检查；table 不受限 */
+const NUMERIC_YFIELD_CHART_TYPES = new Set(['bar', 'line', 'pie', 'combo'])
+
+/**
+ * 检测 spec 的 yFields 是否存在不适合绘图的字段（fail closed；无 columnTypes 时不干预）。
+ * Phase 5N Task 6.5D follow-up: 改为 allowlist — bar/line/pie/combo 仅允许
+ * int/float/decimal，其余类型（string/date/datetime/bytes/bool/null/mixed/unknown）
+ * 全部降级为说明文本。table 不应用此限制。
+ */
+function detectChartFieldIssue(
+  spec: AiChartSpec,
+  columns: string[],
+  rows: any[][],
+  columnTypes?: string[],
+): ChartFieldIssue | null {
+  if (!columnTypes || columnTypes.length !== columns.length) return null
+  if (!NUMERIC_YFIELD_CHART_TYPES.has(spec.chartType)) return null
+  for (const field of spec.yFields) {
+    const idx = columns.indexOf(field)
+    if (idx === -1) continue
+    const columnType = columnTypes[idx]
+    if (!NUMERIC_COLUMN_TYPES.includes(columnType)) {
+      return { field, reason: 'incompatible_type', columnType }
+    }
+    if (columnType === 'decimal' && hasUnsafeDecimalValues(rows, idx)) {
+      return { field, reason: 'unsafe_decimal', columnType }
+    }
+  }
+  return null
 }
 
 const CHART_TYPE_LABELS: Record<string, string> = {
@@ -42,7 +84,14 @@ const ChartCard: React.FC<ChartCardProps> = ({
   width = 320,
   isActive,
   onSelect,
+  columnTypes,
 }) => {
+  // Phase 5N Task 6.5D: unsafe Decimal / 不可图表化字段 → 展示说明而非图表
+  const fieldIssue =
+    spec.chartType !== 'metric-card'
+      ? detectChartFieldIssue(spec, columns, rows, columnTypes)
+      : null
+
   return (
     <Card
       size="small"
@@ -140,14 +189,26 @@ const ChartCard: React.FC<ChartCardProps> = ({
         </div>
       )}
 
-      {/* ECharts 图表 */}
-      {spec.chartType !== 'metric-card' && (
+      {/* ECharts 图表 / 字段类型保护说明 */}
+      {spec.chartType !== 'metric-card' && fieldIssue && (
+        <div
+          data-testid="chart-field-issue"
+          style={{ padding: '24px 8px', textAlign: 'center', color: '#999', fontSize: 12 }}
+        >
+          <InfoCircleOutlined style={{ marginRight: 4 }} />
+          {fieldIssue.reason === 'unsafe_decimal'
+            ? `字段 ${fieldIssue.field} 为高精度 Decimal，超出图表安全精度，请查看查询结果表`
+            : `字段 ${fieldIssue.field} 类型（${fieldIssue.columnType}）不适合图表展示，请查看查询结果表`}
+        </div>
+      )}
+      {spec.chartType !== 'metric-card' && !fieldIssue && (
         <ChartCanvas
           spec={spec}
           columns={columns}
           rows={rows}
           height={200}
           width={width - 32}
+          columnTypes={columnTypes}
         />
       )}
 

@@ -14,6 +14,8 @@ from app.models.base import Base
 @pytest.fixture
 def db_session():
     """内存 SQLite 数据库会话"""
+    # 确保所有模型都注册到 Base.metadata
+    import app.models  # noqa: F401
     engine = create_engine("sqlite:///:memory:", echo=False)
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)

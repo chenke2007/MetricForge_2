@@ -143,13 +143,13 @@ class TestCommentBypass:
 class TestRowLimit:
     def test_apply_row_limit_simple(self, validator):
         wrapped = validator.apply_row_limit("SELECT * FROM t")
-        assert wrapped == "SELECT * FROM (SELECT * FROM t) WHERE ROWNUM <= 1000"
+        assert wrapped == "SELECT * FROM (SELECT * FROM t) WHERE ROWNUM <= 1001"
 
     def test_apply_row_limit_with_orderby(self, validator):
         wrapped = validator.apply_row_limit("SELECT * FROM t ORDER BY id")
-        assert "ROWNUM <= 1000" in wrapped
+        assert "ROWNUM <= 1001" in wrapped
         assert wrapped.startswith("SELECT * FROM (")
-        assert wrapped.endswith(") WHERE ROWNUM <= 1000")
+        assert wrapped.endswith(") WHERE ROWNUM <= 1001")
 
     def test_apply_row_limit_with_cte(self, validator):
         sql = "WITH cte AS (SELECT * FROM t) SELECT * FROM cte"
@@ -160,7 +160,12 @@ class TestRowLimit:
     def test_apply_row_limit_strips_trailing_semicolon(self, validator):
         wrapped = validator.apply_row_limit("SELECT * FROM t;")
         assert not wrapped.rstrip().endswith(";")
-        assert wrapped == "SELECT * FROM (SELECT * FROM t) WHERE ROWNUM <= 1000"
+        assert wrapped == "SELECT * FROM (SELECT * FROM t) WHERE ROWNUM <= 1001"
+
+    def test_apply_row_limit_uses_sentinel(self, validator):
+        """ROWNUM = MAX_RESULT_ROWS + 1 (sentinel row for truncation detection)."""
+        wrapped = validator.apply_row_limit("SELECT * FROM t")
+        assert f"ROWNUM <= {validator.MAX_RESULT_ROWS + 1}" in wrapped
 
 
 class TestEdgeCases:

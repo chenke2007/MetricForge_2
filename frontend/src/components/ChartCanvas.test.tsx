@@ -173,4 +173,42 @@ describe('ChartCanvas', () => {
     render(<ChartCanvas spec={unsupportedSpec} columns={mockColumns} rows={mockRows} height={200} />)
     expect(screen.getByTestId('chart-canvas')).toBeTruthy()
   })
+
+  // ── Phase 5N Task 6.5D: decimal string conversion & unsafe degradation ──
+
+  it('converts safe decimal strings to numbers for charting', () => {
+    render(
+      <ChartCanvas
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '123.45'], ['华南', '678.90']]}
+        columnTypes={['string', 'decimal']}
+        height={200}
+      />
+    )
+    const seriesCall = mockSetOption.mock.calls.find((c) => c[0].series)
+    expect(seriesCall).toBeTruthy()
+    expect(seriesCall![0].series[0].data).toEqual([123.45, 678.9])
+  })
+
+  it('degrades with precision message for unsafe decimal values', () => {
+    render(
+      <ChartCanvas
+        spec={barSpec}
+        columns={['region', 'total_revenue']}
+        rows={[['华东', '12345678901234567890.1234']]}
+        columnTypes={['string', 'decimal']}
+        height={200}
+      />
+    )
+    // 不得输出含 series 数据的真实图表 option
+    const seriesCall = mockSetOption.mock.calls.find(
+      (c) => c[0].series && c[0].series.some((s: any) => (s.data ?? []).length > 0),
+    )
+    expect(seriesCall).toBeUndefined()
+    // 应降级为精度提示
+    const titleCall = mockSetOption.mock.calls.find((c) => c[0].title)
+    expect(titleCall).toBeTruthy()
+    expect(titleCall![0].title.text).toMatch(/精度/)
+  })
 })

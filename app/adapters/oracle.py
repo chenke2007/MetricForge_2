@@ -56,6 +56,11 @@ class OracleAdapter(DataSourceAdapter):
 
         self._connection = oracledb.connect(user=username, password=password, dsn=dsn)
         self._connection.autocommit = False
+        # 驱动层语句级超时（毫秒），与 SQL 执行服务的 30 秒上限保持一致
+        try:
+            self._connection.call_timeout = 30000
+        except Exception:
+            logger.warning("当前驱动不支持 connection.call_timeout")
         logger.info("Oracle 连接成功: %s@%s", username, dsn)
         return self._connection
 
@@ -97,5 +102,31 @@ class OracleAdapter(DataSourceAdapter):
             finally:
                 self._connection = None
 
+    def cancel(self):
+        """取消正在执行的 Oracle 查询"""
+        if self._connection:
+            try:
+                self._connection.cancel()
+            except Exception as e:
+                logger.warning("取消 Oracle 查询时出错: %s", e)
+
     def get_dialect(self) -> str:
         return "oracle"
+
+
+def oracle_adapter_factory(request: "WorkerRequest") -> DataSourceAdapter:
+    """顶层可 pickle 的生产 Oracle adapter 工厂。
+
+    不在 import 时连接。不记录 request.password。
+    使用字符串注解避免循环导入。
+    """
+    return OracleAdapter({
+        "host": request.host,
+        "port": request.port,
+        "service_name": request.service_name,
+        "sid": request.sid,
+        "username": request.username,
+        "password": request.password,
+        "dialect": request.dialect,
+        "lib_dir": request.lib_dir,
+    })
